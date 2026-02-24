@@ -1,0 +1,33 @@
+# =============================================================================
+# GA-Dueling DQN Jamming — Python Dependencies
+# =============================================================================
+# Python 3.11 recommended.
+# Install order:
+#   1) pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cu128
+#   2) pip install -r requirements.txt
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# PyTorch — REQUIRED for model, agent, train. Installed via requirements-torch.txt
+# -----------------------------------------------------------------------------
+# Do NOT run "pip install -r requirements.txt" alone for torch — that would pull CPU from PyPI.
+# Step 1 uses requirements-torch.txt + index-url so torch comes from CUDA wheel.
+# Other CUDA: replace cu128 with cu118, cu121, or cu124 in the Step 1 command.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Test scripts (Markov matrix, pulse train, etc.)
+# -----------------------------------------------------------------------------
+numpy==2.4.2
+PyYAML==6.0.3
+matplotlib==3.10.8
+
+# -----------------------------------------------------------------------------
+# Core training & environment
+# -----------------------------------------------------------------------------
+# Gymnasium does not depend on PyTorch; compatible with Python 3.8–3.12.
+gymnasium==1.2.3
+tqdm==4.67.3
+
+--find-links https://download.pytorch.org/whl/cu128
+torch==2.10.0 

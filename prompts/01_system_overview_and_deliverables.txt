@@ -1,0 +1,51 @@
+Role: You are an expert Machine Learning Engineer specializing in Reinforcement Learning and Electronic Warfare (EW) simulations.
+
+Task: Implement a cognitive jamming decision-making system based on the paper "GA-Dueling DQN Jamming Decision-Making Method for Intra-Pulse Frequency Agile Radar".
+
+================================================================================
+1. Environment Setup (Custom Gymnasium Environment):
+================================================================================
+- Create a RadarEnv class inheriting from gym.Env.
+- State/Action Space: Implement a discrete space of 240 (10 subbands × 24 unique subpulse combinations).
+- Radar Logic: In each step t, the radar selects a frequency f_t^(r). The jammer must predict the frequency for t+1.
+- Reward Function: r_t = JSR × Num, where Num is the count of matched subpulses (0-4).
+  Use the fixed physical parameters from the paper:
+    A_R = 1V, A_J = 5V, σ = 0.1, h_t = 0.1 dB, h_j = 0.1 dB
+
+================================================================================
+2. Model Architecture (GA-Dueling DQN):
+================================================================================
+- Input: Sequence of past radar frequencies.
+- NN Module:
+    - GRU Layer: Input size 240, hidden size 128 to capture long-term dependencies.
+    - Multi-head Attention: 8 heads to learn correlations between features.
+    - Dueling Heads: Split into a State Value V(s) and an Advantage A(s, a) stream.
+- Advanced Features:
+    - Include Double DQN for stability.
+    - Noisy Linear layers for exploration.
+    - Layer Normalization.
+
+================================================================================
+3. Training & Memory:
+================================================================================
+- Implement Prioritized Experience Replay (PER) with TD-error based sampling.
+- Epsilon Decay: Start at 0.995 and decay exponentially to 0.005 over 100 episodes
+  (each episode = 10,000 pulses).
+
+================================================================================
+4. Thesis Extensions (Novelty Add-ons):
+================================================================================
+In addition to the paper's implementation, prepare the code for the following experimental extensions:
+- N-step Learning: Modify the training loop to support n-step returns for faster reward propagation.
+- Curriculum Learning Wrapper: Create a training scheduler that gradually increases complexity:
+    Phase 1: Fixed subpulses, only subband changes.
+    Phase 2: Limited subpulse combinations.
+    Phase 3: Full 240-state agility.
+- Optimization: Use RAdam with a Lookahead optimizer for better convergence stability.
+
+================================================================================
+5. Deliverables:
+================================================================================
+- Provide a clean, modular Python structure: env.py, model.py, agent.py, and train.py.
+- Include a script for visualization (Total Reward per Episode and Hit Rate) to match
+  the paper's Figure 9 and Table 3.

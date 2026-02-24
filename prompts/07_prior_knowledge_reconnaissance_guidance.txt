@@ -1,0 +1,48 @@
+Role: Lead AI Architect.
+
+Task: Implement an optional "Prior Knowledge" feature in the agent.py, model.py,
+and env.py files to replicate the comparative results mentioned in the paper
+(Table 3: 97.14% vs 99.41%).
+
+================================================================================
+1. Environment Modification:
+================================================================================
+  In RadarEnv, add a boolean parameter use_prior_knowledge.
+
+  - If True:  The observation at time t must include the first subpulse frequency
+              (f_1) of the *upcoming* pulse (s_{t+1}) that the agent is trying to
+              jam—not the current pulse. The env must "peek" at s_{t+1} before the
+              agent selects a_t, then return obs = (history, hint) where hint = f_1.
+              Search space reduces from 240 to 6 (f_1 gives subband + first slot;
+              only the ordering of the other 3 subpulses remains → 3! = 6).
+  - If False: The hint should be null/masked (e.g., constant -1 or 0).
+
+================================================================================
+2. Model Architecture Update:
+================================================================================
+  - Update the GADuelingDQN forward pass to handle the optional f_1 input.
+  - Create a small nn.Embedding(10, 8) for the f_1 info.
+  - Concatenate the 128-dim GRU-Attention output with this 8-dim f_1 embedding
+    before feeding it into the Dueling (Value/Advantage) heads.
+
+================================================================================
+3. Agent Control:
+================================================================================
+  - Add a toggle prior_knowledge_enabled in the JammingAgent config.
+  - When enabled, the agent must collect the f_1 info from the env and feed it
+    into the model during both select_action and learn phases.
+
+================================================================================
+4. Verification & Logging:
+================================================================================
+  - Implement a logic to log the Jamming Success Probability separately for when
+    prior knowledge is active vs inactive.
+  - Ensure the GRU's hidden state remains independent of the f_1 info to
+    maintain the "long-term dependency" integrity of the sequence learning.
+
+================================================================================
+5. Implementation Goal:
+================================================================================
+  This setup must allow running two parallel experiments:
+    (1) Standard cognitive jammer (autonomous)
+    (2) Jammer with high-speed intercept receiver (assisted)

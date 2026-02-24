@@ -1,0 +1,50 @@
+# Ignore compiled Python files
+*.pyc
+__pycache__/
+
+# Ignore virtual environment folders
+env/
+venv/
+.venv/
+
+# Ignore PDF documents
+*.pdf
+
+# Ignore common editor/OS files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# IDEs and editor folders
+.vscode/
+.idea/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+
+# Ignore run outputs: plots, csv, images, logs
+# Keep raw data files like .npy (do NOT ignore *.npy)
+results/
+runs/
+plots/
+**/training_plots/
+**/pulse_train_plots/
+**/pulse_train_*/
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.svg
+**/*.csv
+**/*.log
+
+# Misc
+.env
+cursor/
+*.cursor
+*.cursorignore

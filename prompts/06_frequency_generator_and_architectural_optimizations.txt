@@ -1,0 +1,119 @@
+Cursor Prompt #6: Advanced Frequency Generation Matrix & Architectural Optimizations
+
+Role: Expert RL Researcher and DSP Engineer.
+
+Task: Enhance the RadarEnv with a multi-level frequency generation system and
+optimize the Agent architecture for faster convergence and robustness.
+
+================================================================================
+1. Multi-Level Frequency Hopping Matrix
+================================================================================
+Implement a FrequencyGenerator class within environment.py. Config key:
+radar.generator_mode (see Section 6 for decision points). This enables thesis
+ablation studies on when history is informative vs. not.
+
+  Level 0: Uniform (Baseline — Paper Reproduction)
+    - Logic: i.i.d. uniform over [0, 239]; np_random.integers(0, state_dim).
+    - History: NOT useful. Each s_t is independent; GRU cannot exploit patterns.
+    - Use case: Paper baseline, sanity check that learning runs.
+
+  Level 1: Periodic (Sanity Check)
+    - Logic: Repeat a fixed sequence of N frequency indices (e.g. N=10).
+    - History: Useful. GRU can memorize the cycle; hit rate can reach 100%.
+    - Use case: Verify that GRU-Attention exploits temporal structure.
+
+  Level 2: LCG (Statistical PRNG)
+    - Logic: Linear Congruential Generator: x_{n+1} = (a·x_n + c) mod m;
+      map x_n to index in [0, 239] (e.g. x mod 240).
+    - History: Useful. Agent can learn the recurrence if (a, c, m) are stable.
+    - Use case: Test whether the model learns simple deterministic recurrence.
+
+  Level 3: Markov Chain (Probabilistic)
+    - Logic: Transition matrix P(i→j); next state depends on current.
+      Load P from config (e.g. .npy) or generate structured P.
+    - History: Partially useful. Correlations help, but randomness limits
+      perfect prediction.
+    - Use case: Thesis—decision-making under uncertainty, pattern recognition
+      with stochasticity.
+
+  Deferred (Later Stage): LFSR, Biased
+    - LFSR / Gold Sequences: Complex bitwise patterns; tests upper limit of
+      GRU-Attention. Military-standard frequency hopping. Higher effort.
+    - Biased: Non-uniform distribution (e.g. subband preference). Use for
+      stress tests or curriculum (easy → hard).
+
+================================================================================
+2. Architectural Optimization: State Embedding
+================================================================================
+  Rationale:
+    - Raw integers (0-239) suggest a false ordinal relationship (e.g., the
+      model thinks index 1 is "closer" to 2 than to 200). In frequency hopping,
+      indices are categorical, not numerical.
+
+  Implementation:
+    - Replace the raw input layer with nn.Embedding(num_embeddings=240,
+      embedding_dim=64).
+    - Pass the embedded vector into the GRU and Attention blocks.
+
+  Benefit:
+    - Allows the model to learn a high-dimensional relationship between
+      frequencies, significantly speeding up pattern recognition.
+
+================================================================================
+3. Training Stability: Learning Rate Warmup
+================================================================================
+  Rationale:
+    - GRU and Attention layers have unstable gradients at the start of training.
+      A high initial learning rate (like the paper's 0.009) can cause early
+      divergence if the agent starts with "bad" random weights.
+
+  Implementation:
+    - Start with a low LR (e.g., 1e-5).
+    - Linearly increase (Warmup) to the target LR (0.009) over the first 5
+      episodes.
+    - Apply a Cosine Annealing decay for the remaining episodes.
+
+================================================================================
+4. Learning Failback: Action Masking
+================================================================================
+  Rationale:
+    - If the reward does not increase after 20 episodes, the 240-action search
+      space is likely too sparse for the agent to find a signal.
+
+  Implementation:
+    - Implement Action Masking. If the hit rate is <5%, temporarily restrict
+      the agent's action space to only the Subband it predicts (reducing the
+      search from 240 to 24 options).
+    - Once the hit rate exceeds 20%, "unmask" the full action space to allow
+      the model to refine its intra-pulse prediction.
+
+  Benefit:
+    - Prevents the agent from getting stuck in a "zero-reward" loop during
+      early training.
+
+================================================================================
+5. Implementation Requirements:
+================================================================================
+  - Update env.py: add generator_mode (or difficulty_level) and wire
+    _generate_next_state() to FrequencyGenerator.
+  - Update model.py with the nn.Embedding layer.
+  - Update the training loop (train.py) to include the LR Scheduler and
+    Action Masking logic.
+  - Provide a clear log output showing which generator mode is active.
+
+================================================================================
+6. Decision Points (Config, Interface, Seed)
+================================================================================
+  Config:
+    - radar.generator_mode: "uniform" | "periodic" | "lcg" | "markov"
+    - Mode-specific params: periodic_sequence, lcg_a/c/m, markov_transition_path
+
+  Generator Interface:
+    - FrequencyGenerator(config, state_dim=240, rng=None)
+    - reset(seed=None): (re)seed, clear internal state (for LCG/Markov)
+    - next(prev_state: int | None) -> int: produce next index
+    - RadarEnv delegates _generate_next_state() to generator.next(prev_state)
+
+  Seed Control:
+    - env.reset(seed=global_seed + episode) for reproducible per-episode radar
+    - Generator uses env.np_random or a dedicated Generator passed from env

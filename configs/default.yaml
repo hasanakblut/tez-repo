@@ -1,0 +1,101 @@
+# =============================================================================
+# GA-Dueling DQN — Default Configuration
+# =============================================================================
+# Central parameter file for all modules (env, model, agent, train).
+# Paper: Xia et al., Sensors 2024, 24, 1325.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Physical Parameters (Paper Table 1)
+# -----------------------------------------------------------------------------
+physics:
+  A_R: 1.0          # Radar pulse amplitude (V)
+  A_J: 5.0          # Jammer pulse amplitude (V)
+  h_t: 0.1          # Radar-target channel gain
+  h_j: 0.1          # Radar-jammer channel gain
+  sigma: 0.1        # Target RCS (m²)
+  L: 0.05           # Sidelobe loss
+
+# -----------------------------------------------------------------------------
+# Radar Parameters (Paper Section 2.1, Section 4)
+# -----------------------------------------------------------------------------
+radar:
+  M: 10             # Number of subbands
+  K: 4              # Sub-pulses per pulse
+  f_low: 10.0e+9   # Lower frequency bound (Hz) — 10 GHz; e+9 so PyYAML parses as float
+  f_high: 11.0e+9  # Upper frequency bound (Hz) — 11 GHz
+  generator_mode: "markov"    # uniform | periodic | lcg | markov | markov_subband (isteğe markov_transition_path verin)
+  reset_generator_on_episode: true
+  periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
+  lcg_params:
+    a: 1103515245
+    c: 12345
+    m: 2147483648
+  markov_params:
+    sparsity: 0.1
+    delta_limit: 20
+  markov_subband_params:
+    stay_prob: 0.7
+    sparsity: 0.1
+    sigma_subband: 1.5
+  start_index: 0
+  # markov_transition_path: "path/to/P.npy"  # optional override
+  # Derived: B = 1 GHz, delta_f = 100 MHz, sub-pulse BW = 25 MHz
+  # Derived: state_dim = M × K! = 10 × 24 = 240
+
+# -----------------------------------------------------------------------------
+# Episode Parameters (Paper Section 4)
+# -----------------------------------------------------------------------------
+episode:
+  max_pulses: 10000  # Pulses per episode (one pulse train)
+  num_episodes: 100  # Total training episodes
+
+# -----------------------------------------------------------------------------
+# Environment
+# -----------------------------------------------------------------------------
+environment:
+  history_len: 10    # Observation history buffer length for GRU input
+
+# -----------------------------------------------------------------------------
+# Network Architecture (Paper Table 2, Figures 6-8)
+# -----------------------------------------------------------------------------
+network:
+  state_dim: 240     # Input dimension (index space)
+  action_dim: 240    # Output dimension (number of actions)
+  embed_dim: 64      # Embedding dimension; GRU input size (32, 64, 128)
+  hidden_dim: 128    # GRU hidden size
+  num_heads: 8       # Multi-head attention heads
+  fc_dim: 64         # FC1 and FC2 width
+  sigma_init: 0.5    # NoisyLinear initial noise scale
+
+# -----------------------------------------------------------------------------
+# Training Hyperparameters (Paper Table 2, Section 4)
+# -----------------------------------------------------------------------------
+training:
+  gamma: 0.9               # Discount factor
+  learning_rate: 0.009      # Learning rate
+  batch_size: 256           # Minibatch size for PER sampling
+  epsilon_start: 0.995      # Initial exploration rate
+  epsilon_end: 0.005        # Final exploration rate
+  epsilon_decay_episodes: 100  # Episodes over which epsilon decays
+  target_update_freq: 1     # Target network update frequency (per episode)
+
+# -----------------------------------------------------------------------------
+# Prioritized Experience Replay (Paper Section 3.3)
+# -----------------------------------------------------------------------------
+replay:
+  buffer_size: 100000       # Maximum replay buffer capacity
+  alpha: 0.6                # Priority exponent (how much prioritization)
+  beta_start: 0.4           # Initial importance-sampling weight
+  beta_end: 1.0             # Final importance-sampling weight
+  beta_anneal_episodes: 100 # Episodes to anneal beta from start to end
+  min_priority: 1.0e-6      # Minimum priority to prevent zero-probability
+
+# -----------------------------------------------------------------------------
+# Logging & Checkpoints
+# -----------------------------------------------------------------------------
+logging:
+  log_interval: 1           # Log metrics every N episodes (ML-style line to terminal)
+  save_interval: 10         # Save model checkpoint every N episodes
+  plot_interval: 10         # Update training curves every N episodes (same dir as final)
+  results_dir: "results"    # Directory for saved models and plots

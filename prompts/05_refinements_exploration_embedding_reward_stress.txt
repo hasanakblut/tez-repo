@@ -1,0 +1,67 @@
+Role: Senior AI Researcher specializing in Robust Reinforcement Learning.
+
+Task: Refine the model.py and agent.py to address key architectural bottlenecks:
+Exploration Hybridization, State Embedding, and Reward Sparsity. Implement these
+as modular "Add-ons" to the baseline paper's method.
+
+================================================================================
+1. Hybrid Exploration & Failback Mechanism:
+================================================================================
+  Baseline: The paper uses both Noisy Linear layers and an ε-greedy strategy.
+
+  Task:
+    - Implement a toggle in the agent to compare three modes:
+      (1) Pure Noisy Net
+      (2) Pure ε-greedy
+      (3) Hybrid
+
+  Failback:
+    - If the hit rate (Jamming Success Probability) stays below 10% for more
+      than 5000 pulses, implement an Exploration Boost that temporarily resets
+      ε to a higher value to force the agent out of a local optimum.
+
+================================================================================
+2. State Representation (From Raw Index to Embedding):
+================================================================================
+  Issue:
+    - Inputting a raw index (0-239) into the GRU implies a linear relationship
+      that doesn't exist between frequency combinations.
+
+  Modification:
+    - Replace the direct input layer with an Embedding Layer
+      (nn.Embedding(240, 64)). This will transform the discrete frequency
+      indices into a dense, learnable vector space before reaching the GRU
+      and Attention modules.
+
+  Thesis Goal:
+    - Test if this representation speeds up the pattern recognition of the
+      radar's pseudo-random sequence compared to the paper's baseline.
+
+================================================================================
+3. Reward Shaping for Sparsity (Alleviating the Num=0 Problem):
+================================================================================
+  Baseline:
+    - Reward is strictly JSR × Num. If Num=0, the agent receives zero feedback,
+      creating a "sparse reward" problem.
+
+  Add-on (Soft Reward):
+    - Implement a "Subband Match" reward. If the agent correctly predicts the
+      subband (the frequency range) but fails the specific subpulse combination
+      (Num=0), give a small partial reward (e.g., 0.1 × JSR).
+
+  Failback:
+    - Ensure this soft reward "fades out" (Curriculum Learning) as the episode
+      count increases, eventually reverting to the paper's strict JSR × Num
+      formula for final evaluation.
+
+================================================================================
+4. Stress Testing (Non-Stationary Radar Mode):
+================================================================================
+  Task:
+    - Create a "Stress Test" script. Mid-episode (e.g., at pulse 5000), change
+      the radar's pseudo-random seed or its d_n modulation code.
+
+  Metric:
+    - Log the Adaptation Time—how many pulses the GA-Dueling DQN needs to
+      recover its 97% hit rate after the radar strategy shift. This will be a
+      primary contribution to the thesis robustness analysis.

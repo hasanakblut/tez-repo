@@ -1,0 +1,66 @@
+# =============================================================================
+# Test Training — Short runs for dry-run and verification
+# =============================================================================
+# Same structure as default.yaml; reduced episodes and pulses for quick checks.
+# Use with: python -m scripts.training_test  or  python -m src.train --config configs/test_training.yaml
+# =============================================================================
+
+physics:
+  A_R: 1.0
+  A_J: 5.0
+  h_t: 0.1
+  h_j: 0.1
+  sigma: 0.1
+  L: 0.05
+
+radar:
+  M: 10
+  K: 4
+  f_low: 10.0e+9   # PyYAML: signed exponent (e+9) parses as float
+  f_high: 11.0e+9
+  generator_mode: "uniform"
+  reset_generator_on_episode: true
+  periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
+  lcg_params: { a: 1103515245, c: 12345, m: 2147483648 }
+  markov_params: { sparsity: 0.1, delta_limit: 20 }
+  markov_subband_params: { stay_prob: 0.7, sparsity: 0.1, sigma_subband: 1.5 }
+  start_index: 0
+
+episode:
+  max_pulses: 500      # short for test
+  num_episodes: 2      # 1–2 episodes for dry-run
+
+environment:
+  history_len: 10
+
+network:
+  state_dim: 240
+  action_dim: 240
+  embed_dim: 64
+  hidden_dim: 128
+  num_heads: 8
+  fc_dim: 64
+  sigma_init: 0.5
+
+training:
+  gamma: 0.9
+  learning_rate: 0.009
+  batch_size: 64       # smaller for quick test
+  epsilon_start: 0.995
+  epsilon_end: 0.005
+  epsilon_decay_episodes: 2
+  target_update_freq: 1
+
+replay:
+  buffer_size: 5000
+  alpha: 0.6
+  beta_start: 0.4
+  beta_end: 1.0
+  beta_anneal_episodes: 2
+  min_priority: 1.0e-6
+
+logging:
+  log_interval: 1
+  save_interval: 2
+  plot_interval: 2
+  results_dir: "results"

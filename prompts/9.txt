@@ -1,0 +1,34 @@
+### TASK: Modular Radar Environment & Flexible Neural Architecture Implementation
+
+**Context:** I am refining my thesis project to include advanced frequency agility models and architectural optimizations. The goal is to compare the paper's baseline results with more complex, realistic radar behaviors.
+
+**1. Advanced Frequency Generator (env_utils.py):**
+- Implement `FrequencyGenerator(config, state_dim=240, rng=None)`.
+- **Mode-Specific Logic:**
+    - `uniform`: Standard i.i.d. random sampling.
+    - `periodic`: Cycles through `config.radar.periodic_sequence`.
+    - `lcg`: Linear Congruential Generator ($x_{n+1} = (a \cdot x_n + c) \pmod m$).
+    - `markov`: Next state $j$ is sampled based on $P[i][j]$. 
+- **Markov Constraints:** Implement a "Band-Limited" transition matrix if no matrix is provided. This means from state $i$, the radar can only jump to states $[i-delta, i+delta]$ with high probability, simulating physical hardware constraints.
+- **Configurable Reset:** In `Generator.reset()`, check `config.radar.reset_generator_on_episode`. If True, re-initialize the LCG state or Markov starting position to ensure a clean slate for each episode.
+
+**2. Flexible Model Architecture (model.py):**
+- **State Embedding:** Replace the raw integer input with `nn.Embedding(num_embeddings=240, embedding_dim=config.model.embed_dim)`.
+- **Dimensionality:** Ensure `config.model.embed_dim` is a parameter (default: 64, but selectable as 32, 128, etc.). 
+- **Flow:** The embedding vector must be fed into the GRU. Update the GRU's `input_size` to match `config.model.embed_dim`. Keep the 8-head Attention and Dueling heads as per the paper.
+
+**3. Environment & Agent Integration:**
+- Update `RadarEnv` to use this `FrequencyGenerator`. 
+- Ensure `env.reset(seed=...)` properly passes the seed to the generator's RNG for reproducibility.
+- The `Agent` should now receive the frequency index, which is passed through the embedding layer inside the model's forward pass.
+
+**4. Configuration Structure:**
+```yaml
+radar:
+  generator_mode: "markov" # "uniform", "periodic", "lcg", "markov"
+  reset_generator_on_episode: true
+  markov_params:
+    sparsity: 0.1 # Percentage of non-zero transitions
+    delta_limit: 20 # Max distance for band-limited jumps
+model:
+  embed_dim: 64 # Flexible: 32, 64, or 128

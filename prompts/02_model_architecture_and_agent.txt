@@ -1,0 +1,61 @@
+Role: Expert Deep Learning Architect specializing in Reinforcement Learning (RL) and Recurrent Neural Networks.
+
+Task: Implement the model.py and agent.py files for the GA-Dueling DQN system as specified in the
+"GA-Dueling DQN Jamming Decision-Making Method" paper.
+
+================================================================================
+1. Network Architecture (GA-Dueling DQN):
+================================================================================
+Please implement a PyTorch-based neural network class with the following specific layers and dimensions:
+
+Sequence Processor (The NN Module):
+  - GRU Layer: Input size of 240 (state space), hidden size of 128.
+    It must handle sequence data to capture long-term dependencies in radar frequency patterns.
+  - Multi-Head Self-Attention: 8 attention heads with an embed dimension of 128.
+    This module learns correlations between sequence features.
+  - Fully Connected 1 (FC1): A Noisy Linear layer with input 128 and output 64,
+    followed by Layer Normalization.
+  - Fully Connected 2 (FC2): A Noisy Linear layer with input 64 and output 64,
+    followed by Layer Normalization.
+
+Dueling Heads:
+  After FC2, split the network into two streams:
+  - State Value Stream V(s): A Noisy Linear layer (FC3) with output 1.
+  - Advantage Stream A(s,a): A Noisy Linear layer (FC3) with output 240 (action space).
+
+Q-Value Combination:
+  Combine V(s) and A(s,a) using the following aggregation to improve stability:
+  Q(s, a; w) = V(s; w^V) + ( A(s, a; w^A) - (1/|A|) * Σ A(s, a'; w^A) )
+
+================================================================================
+2. Agent Logic (Predictive Decision Making):
+================================================================================
+  - Action Selection: Implement an ε-greedy strategy where ε decays exponentially
+    from 0.995 to 0.005.
+  - Double DQN Update: The agent must use a Policy Network for action selection
+    and a Target Network for Q-value evaluation to mitigate overestimation.
+  - Experience Replay: Use Prioritized Experience Replay (PER).
+    Each transition (s_t, a_t, r_{t+1}, s_{t+1}) must be stored with a priority
+    based on its TD-error.
+
+================================================================================
+3. Advanced Optimizations for Thesis Novelty:
+================================================================================
+  - N-Step Returns: Implement logic to calculate the n-step discounted reward
+    for transitions to speed up reward propagation.
+  - Dynamic GRU Window: Ensure the model can accept input sequences of variable
+    lengths (L=5 to L=20) to experiment with temporal depth.
+  - Optimizer Suite: Use RAdam (Rectified Adam) as the base optimizer, wrapped
+    with a Lookahead mechanism to stabilize weight updates in the high-variance
+    radar environment.
+  - Layer Normalization: Apply normalization after each Noisy Linear layer
+    to prevent gradient explosion/vanishing issues.
+
+================================================================================
+4. Implementation Requirements:
+================================================================================
+  - Use torch.nn.Module for the network architecture.
+  - Implement a custom NoisyLinear class if not using a standard library,
+    ensuring Gaussian noise is added to weights and biases.
+  - Ensure the forward pass correctly handles the GRU's hidden state
+    across steps within an episode.

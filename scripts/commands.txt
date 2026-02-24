@@ -1,0 +1,65 @@
+Outputs: pulse_train_plots, markov_matrices, training_plots (under results)
+Line continuation: Linux/Bash \  |  Windows CMD ^
+
+---
+Full training (100 episodes × 10k pulses; one run dir per training)
+  Config: configs/default.yaml. Outputs under results/runs/run_YYYYMMDD_HHMMSS_<config>_ep<N>/
+  (training.log, metrics.jsonl, training_plots/*.png, checkpoint_ep*.pt, final_model.pt)
+python -m src.train
+  With custom config:
+python -m src.train --config configs/default.yaml
+  Optional: set seed in config (e.g. seed: 42 under top-level) for reproducibility.
+
+---
+Uniform pulse train (500 pulses)
+
+Linux/Bash:
+python -m scripts.plot_pulse_train \
+  --seed 42 \
+  --start-index 0 \
+  --num-pulses 500
+
+CMD:
+python -m scripts.plot_pulse_train ^
+  --seed 42 ^
+  --start-index 0 ^
+  --num-pulses 500
+
+---
+Pulse train with Markov P (1000 pulses, save)
+
+Linux/Bash:
+python -m scripts.plot_pulse_train \
+  --seed 101 \
+  --start-index 24 \
+  --mode markov \
+  --markov-npy results/markov_matrices/markov_P_markov_subband_seed101.npy \
+  --num-pulses 1000 \
+  --save-train
+
+CMD:
+python -m scripts.plot_pulse_train ^
+  --seed 101 ^
+  --start-index 24 ^
+  --mode markov ^
+  --markov-npy results/markov_matrices/markov_P_markov_subband_seed101.npy ^
+  --num-pulses 1000 ^
+  --save-train
+
+---
+Pulse train tests: reproducibility + sensitivity (3 checks)
+  Same seed+start → identical; different seed → different; different start → different
+
+Linux/Bash:
+python -m scripts.test_pulse_train_randomness_in_markov \
+  --markov-npy results/markov_matrices/markov_P_markov_subband_seed101.npy \
+  --seed 42 \
+  --start-index 0 \
+  --num-pulses 500
+
+CMD:
+python -m scripts.test_pulse_train_randomness_in_markov ^
+  --markov-npy results/markov_matrices/markov_P_markov_subband_seed101.npy ^
+  --seed 42 ^
+  --start-index 0 ^
+  --num-pulses 500

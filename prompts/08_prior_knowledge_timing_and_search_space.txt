@@ -1,0 +1,79 @@
+# Prior Knowledge: Timing Clarification & Search Space Reduction
+
+> **Purpose:** Clarify the technical distinction between "reading tea leaves" vs.
+> "analyzing a real signal" when implementing prior knowledge in the GA-Dueling DQN
+> jamming scenario. Based on Cursor feedback and paper Table 3 (97.14% vs 99.41%).
+
+---
+
+## 1. The Core Insight: Predictive vs. Reactive
+
+If the jammer operates **predictively**, the decision at time \(t\) targets the
+**upcoming** radar pulse at \(t+1\) (\(s_{t+1}\))—which has not yet fully occurred.
+Therefore, "prior knowledge" (ön bilgi) is the first hint **inside that future pulse**
+\(s_{t+1}\), not the current one. This is the technical difference between the model
+"reading tea leaves" vs. "analyzing a real signal."
+
+---
+
+## 2. Why This Timing Matters
+
+### 2.1 Physical Timing (LPI / Leading Edge)
+
+- The jammer detects the start of the radar pulse within the **first nanoseconds**
+  via LPI (Low Probability of Intercept) receivers.
+- Before the pulse ends, the **first subpulse** (\(f_1\)) is captured.
+- The jammer uses \(f_1\) to decide how to jam the **remainder** of the pulse
+  (\(f_2, f_3, f_4\)).
+
+### 2.2 Search Space Reduction
+
+| Condition              | Search space | Explanation                                      |
+|------------------------|-------------|---------------------------------------------------|
+| No prior knowledge     | 240         | Full state space (10 subbands × 24 permutations) |
+| With \(f_1\) known     | 6           | \(f_1\) gives subband + first slot; only the     |
+|                        |             | ordering of the other 3 subpulses remains (3!)   |
+
+**Result:** The search space shrinks from 240 to 6. This explains the jump from
+~97% to ~99% accuracy in Table 3 when prior knowledge is used.
+
+---
+
+## 3. Required Code Flow Change
+
+### 3.1 Standard Gymnasium Flow (Without Prior Knowledge)
+
+```text
+obs = env.step(action)
+```
+
+### 3.2 Prior-Knowledge Flow
+
+At the start of step \(t\):
+
+1. The radar **secretly** generates the next pulse \(s_{t+1}\).
+2. The **environment** provides the agent with:
+   - `history`: the sequence of past pulses \(s_{t-L} \dots s_t\)
+   - `hint`: the \(f_1\) of the new pulse \(s_{t+1}\)
+3. The agent uses this \(f_1\) hint to select action \(a_t\).
+4. The reward is computed by comparing \(a_t\) with the **hidden** \(s_{t+1}\).
+
+---
+
+## 4. Cursor "Ambiguity Fix" Directive
+
+When prompting Cursor for implementation, add the following clarification:
+
+**Correction on Prior Knowledge Timing:**
+- "Prior Knowledge" refers to the first subpulse frequency (\(f_1\)) of the
+  **upcoming** pulse (\(s_{t+1}\)) that the agent is trying to jam.
+
+**Logic for env.py:**
+- The observation at time \(t\) must be a tuple or dict with:
+  - `history`: sequence of previously completed pulses (\(s_{t-L} \dots s_t\))
+  - `hint`: the \(f_1\) component of the target pulse (\(s_{t+1}\))
+- When `use_prior_knowledge` is False, `hint` should be null/masked.
+- When True, the environment must **peek** at \(s_{t+1}\) and provide its \(f_1\)
+  to the agent **before** the agent selects action \(a_t\).
+
+This matches the paper’s 99.41% result from leveraging the intra-pulse leading edge.

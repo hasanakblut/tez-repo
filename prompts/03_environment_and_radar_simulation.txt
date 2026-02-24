@@ -1,0 +1,73 @@
+Role: Senior DSP (Digital Signal Processing) and Reinforcement Learning Engineer.
+
+Task: Implement the RadarEnv (Gymnasium Environment) for the cognitive jamming simulation,
+focusing on the high-fidelity frequency agility logic described in the GA-Dueling DQN paper.
+
+================================================================================
+1. Frequency Space & Combinatorial Logic:
+================================================================================
+  Bandwidth Partitioning:
+    - Define a total bandwidth B = 1 GHz (from 10 GHz to 11 GHz).
+    - Divide this into M = 10 subbands of 100 MHz each.
+
+  Sub-pulse Generation:
+    - Each pulse contains K = 4 sub-pulses.
+    - Within a selected subband, the frequencies of these 4 sub-pulses must be
+      pairwise distinct.
+
+  State/Action Mapping:
+    - Calculate all 24 possible permutations (4!) of sub-pulse frequencies
+      within a subband.
+    - Map the total space to 240 discrete indices (10 subbands × 24 permutations).
+    - The environment must provide a helper method to decode an index (0-239)
+      back into a 4-element frequency vector and vice-versa.
+
+================================================================================
+2. Radar Hopping Logic (The Sequence):
+================================================================================
+  Pseudo-Random Generator:
+    - Implement a _generate_next_state() method that selects the next frequency
+      index based on the radar's internal "random integer" modulation code (d_n).
+
+  Predictive Timing (MDP Flow):
+    - At step t, the step(action) function must:
+        1. Store the current radar frequency as s_t.
+        2. Generate the next radar frequency as s_{t+1}.
+        3. Compare the Jammer's action a_t (its prediction) against s_{t+1}.
+        4. Calculate the reward based on the match between a_t and s_{t+1}.
+
+================================================================================
+3. Physical Modeling & Reward Calculation (Equation 15):
+================================================================================
+  JSR Constants (from Paper Table 1):
+    - A_R = 1 V         (Radar pulse amplitude)
+    - A_J = 5 V         (Jammer pulse amplitude)
+    - h_t = 0.1 dB      (Radar-target channel gain)
+    - h_j = 0.1 dB      (Radar-jammer channel gain)
+    - σ   = 0.1 m²      (Target RCS)
+    - L   = 0.05 dB     (Sidelobe loss)
+
+  Power Calculation:
+    - Radar Power:  P_R = (A_R² × τ_R) / (2T)
+    - Jammer Power: P_J = (A_J² × τ_J) / (2T)
+
+  Reward Formula:
+    - r_t = JSR × Num
+    - where Num ∈ {0, 1, 2, 3, 4} is the number of sub-pulses in the jammer's
+      action that exactly match the radar's next sub-pulse frequencies.
+    - Base JSR = (P_J × h_j × L) / (P_R × h_t² × σ)
+
+================================================================================
+4. Gymnasium Interface:
+================================================================================
+  reset():
+    - Initialize the first radar frequency and return it as the initial observation.
+
+  step(action):
+    - Update t → t+1.
+    - Return next_state (s_{t+1}), reward, done (if t ≥ 10,000), and info
+      (include the hit rate / match count for logging).
+
+  History:
+    - Ensure the observation returned is the current frequency index so the
+      Agent's GRU can build a sequence of history.

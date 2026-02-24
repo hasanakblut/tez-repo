@@ -1,0 +1,63 @@
+Role: Expert RL Engineer implementing the agent and training pipeline.
+
+Context: You are now implementing the agent.py and the core training loop for the
+GA-Dueling DQN system. You have access to the provided paper. Your goal is to translate
+Section 3.3 (Deep Reinforcement Learning-Based Approach) and Algorithm 1 into a
+production-ready RL Agent.
+
+================================================================================
+1. Agent Class Definition:
+================================================================================
+  - Create a JammingAgent class that manages two instances of the GADuelingDQN
+    model: a Policy Network (for action selection and updates) and a Target
+    Network (for stable TD-target calculation).
+  - GRU Hidden State Management: Ensure the agent maintains and correctly
+    updates the GRU's hidden state across steps within an episode to preserve
+    temporal context.
+
+================================================================================
+2. Decision Making & Exploration:
+================================================================================
+  Action Selection:
+    - Implement the ε-greedy strategy.
+    - Generate a random value; if < ε, select a random frequency index (0-239).
+    - Otherwise, pass the state sequence through the Policy Network and select
+      the action with the highest Q-value.
+
+  Epsilon Decay:
+    - Implement exponential decay from 0.995 to 0.005 over the course of
+      100 episodes.
+
+================================================================================
+3. Memory & Learning (Algorithm 1):
+================================================================================
+  Prioritized Experience Replay (PER):
+    - Implement a buffer that stores (s_t, a_t, r_{t+1}, s_{t+1}).
+    - Sampling: Sample minibatches of size 256 based on priorities (TD-error).
+
+  Loss Calculation (Double DQN Logic):
+    - Use the Policy Network to select the best action for the next state s_{t+1}.
+    - Use the Target Network to evaluate the Q-value of that selected action.
+    - Calculate the Huber Loss or MSE Loss between the TD-target and current
+      Q-prediction.
+
+================================================================================
+4. Advanced Thesis Enhancements (Novelty Integration):
+================================================================================
+  - N-step Learning: Prepare the learn() method to handle n-step returns.
+    If n > 1, calculate the accumulated reward over n steps and adjust the
+    discount factor γ^n accordingly.
+  - RAdam + Lookahead Optimizer: Instead of standard Adam, initialize the
+    optimizer as RAdam and wrap it with the Lookahead mechanism to stabilize
+    weight updates during high-variance frequency hopping sequences.
+  - Sequence Handling: The agent should handle input as a sliding window of
+    the last L radar pulses (e.g., L=10) to feed the GRU-Attention layers.
+
+================================================================================
+5. Training Workflow:
+================================================================================
+  - Implement the loop for 100 episodes, each with 10,000 pulses.
+  - Every C steps (e.g., every 1000 steps), hard-copy or soft-update the
+    Policy Network weights to the Target Network.
+  - Log the Hit Rate (number of Num=4 matches / total pulses) and Average
+    Reward for each episode to track convergence.
