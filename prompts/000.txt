@@ -1,0 +1,45 @@
+# Epsilon (ε) Güncelleme Stratejisi — Makale Özeti
+
+Makalede ε (epsilon) parametresinin güncelleme döngüsü ve stratejisi aşağıdaki gibi tanımlanmıştır.
+
+---
+
+## 1. Güncelleme sıklığı ve zamanlama
+
+- ε değeri **her eğitim adımında (training step)** güncellenmektedir.
+- Algoritma akışına (Algorithm 1) göre, ε’nun **azalma işlemi her bir darbe (pulse) etkileşimi sonrasında** gerçekleşir.
+- Yani bir episode (10.000 darbe) bitmesini beklenmeden, **adım adım (step-by-step)** azalma söz konusudur.
+
+---
+
+## 2. Azalma fonksiyonu (exponential decay)
+
+- Makalede ε’nun **üstel (exponential)** olarak azaldığı belirtilmiştir.
+- Keşif olasılığı başlangıçta hızlı düşer, ancak tamamen sıfırlanmaz.
+
+| Parametre | Değer |
+|-----------|--------|
+| Başlangıç | 0.995 |
+| Bitiş (minimum) | 0.005 |
+
+---
+
+## 3. Hibrit keşif yapısı (ε-greedy + Noisy Net)
+
+Makale, ε-greedy’yi tek başına değil **Noisy Net** ile birlikte kullanır:
+
+- **Başlangıç:** ε = 0.995 → jammer neredeyse tamamen rastgele aksiyonlarla çevreyi (radar frekans atlama örüntüsünü) tanır.
+- **İlerleme:** ε üstel azalır; ağ, **Noisy Net** (öğrenilebilir gürültü) ile daha “akıllı” keşif yapar.
+- **Son aşama:** ε = 0.005 → keşif neredeyse durur, ajan öğrendiği optimal stratejiyi (exploitation) uygular.
+
+---
+
+## Doğrulama (codebase)
+
+| # | Madde | Beklenen | Konum | Durum |
+|---|--------|----------|--------|--------|
+| 1 | ε güncelleme sıklığı | Her pulse/step sonrası | `src/train.py` (satır 368, 488–489, 536–537), `configs/default.yaml` | **Kısmen:** Varsayılan `epsilon_decay_mode: "per_episode"` (her bölüm sonunda bir kez). Makaledeki “her darbe sonrası” davranışı için config’te `epsilon_decay_mode: "per_step"` yapılmalı; kod zaten her pulse sonrası `decay_epsilon()` çağırıyor (`per_step` modunda). |
+| 2 | Üstel azalma, 0.995 → 0.005 | Exponential decay, start/end | `configs/default.yaml` (epsilon_start/end), `src/agent.py` (satır 249–259, 468–471) | **Uygulandı.** Config’te 0.995 ve 0.005; agent’ta `epsilon_decay = (end/start)^(1/N)` ile üstel azalma, `decay_epsilon()` ile her çağrıda `ε ← max(ε_end, ε × decay)`. |
+| 3 | ε-greedy + Noisy Net birlikte | İkisi aktif, birbirini ezmesin | `src/model.py` (NoisyLinear: fc1, fc2, value_stream, advantage_stream), `src/agent.py` (select_action: ε ile rastgele, else argmax(Q)) | **Uygulandı.** Dueling head’te NoisyLinear kullanılıyor; Q(s,a) gürültülü hesaplanıyor. `select_action` önce Q çıkarıyor, sonra `random.random() < epsilon` ise rastgele aksiyon, değilse argmax(Q). İkisi birlikte, üst üste yazma yok. |
+
+**Özet:** Madde 2 ve 3 kodda karşılanıyor. Madde 1 için makale “her pulse sonrası” diyorsa, `configs/default.yaml` içinde `epsilon_decay_mode: "per_step"` yapıp (isteğe göre `epsilon_decay_steps: 1000000`) eğitimi çalıştırmak yeterli. Ayrıntı: `docs/EPSILON_DECAY.md`.

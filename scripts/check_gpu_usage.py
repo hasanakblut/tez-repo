@@ -45,7 +45,12 @@ def main():
     print("=" * 60)
     print("PyTorch CUDA available:", torch.cuda.is_available())
     if torch.cuda.is_available():
-        print("CUDA device:", torch.cuda.get_device_name(0))
+        num_gpus = torch.cuda.device_count()
+        print(f"Number of GPUs: {num_gpus}")
+        for i in range(num_gpus):
+            props = torch.cuda.get_device_properties(i)
+            mem_gb = props.total_memory / (1024**3)
+            print(f"  GPU {i}: {torch.cuda.get_device_name(i)} ({mem_gb:.1f} GB)")
         print("Current device (PyTorch):", torch.cuda.current_device())
     else:
         print("(Training will use CPU.)")
@@ -56,6 +61,9 @@ def main():
     param_device = next(agent.policy_net.parameters()).device
     print("Policy network parameters on:", param_device)
     print("Agent device:", agent.device)
+    if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        using_dp = isinstance(agent.policy_net, torch.nn.DataParallel)
+        print("Multi-GPU (DataParallel):", using_dp, f"— batch split across {torch.cuda.device_count()} GPUs in learn()")
     print()
 
     obs, _ = env.reset(seed=42)

@@ -30,7 +30,8 @@ def _indices_in_subband(k: int) -> range:
 
 
 def _apply_absorbing_prevention(P: np.ndarray, epsilon: float = 1e-6) -> np.ndarray:
-    """Add epsilon to all cells and renormalize rows. Ensures irreducibility."""
+    """Add epsilon to all cells and renormalize rows. Ensures irreducibility.
+    Output: each row sums to 1; entries in (0, 1] (typically ~1e-6 to 1)."""
     P = P + epsilon
     row_sums = P.sum(axis=1, keepdims=True)
     P = P / row_sums
@@ -67,6 +68,7 @@ class FrequencyGenerator:
         # --- Mode-specific state ---
         self._periodic_idx: int = 0
         self._lcg_state: int = 0
+        # Set only in _init_mode(); reset() never reassigns — same P for entire run
         self._markov_P: Optional[np.ndarray] = None
         self._markov_cumsum: Optional[np.ndarray] = None
 
@@ -89,9 +91,10 @@ class FrequencyGenerator:
             path = radar_cfg.get("markov_transition_path")
             if path:
                 p = Path(path)
-                if p.is_absolute() or not p.exists():
+                if p.is_absolute():
                     full_path = p
                 else:
+                    # Resolve relative paths from project root so it works from any cwd
                     full_path = Path(__file__).resolve().parent.parent / p
                 self._markov_P = np.load(str(full_path)).astype(np.float64)
             else:
@@ -122,6 +125,7 @@ class FrequencyGenerator:
         """Build band-limited transition matrix: from i, nonzero only for
         j in [max(0, i-delta), min(state_dim-1, i+delta)].
         sparsity: fraction of band that is nonzero (density).
+        Values: row-wise Dirichlet then normalize → each row sums to 1, entries in (0, 1].
         """
         n = self.state_dim
         P = np.zeros((n, n))
@@ -198,13 +202,21 @@ class FrequencyGenerator:
                 P[i, i] = 1.0
         return P
 
-    def reset(self, seed: Optional[int] = None) -> None:
-        """Reseed RNG (if owned) and reset mode-specific internal state."""
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        start_index: Optional[int] = None,
+    ) -> None:
+        """Reseed RNG (if owned) and reset mode-specific internal state.
+        Markov matrix P is unchanged (built once in __init__). Optional
+        start_index sets the first state for markov/markov_subband."""
         if seed is not None and self._owns_rng:
             self._rng = np.random.default_rng(seed)
+        if start_index is not None:
+            self._start_index = max(0, min(self.state_dim - 1, int(start_index)))
         self._periodic_idx = 0
         self._lcg_state = int(self._rng.integers(0, 2**31))
-        # Markov: no position to reset; cumsum stays same
+        # Markov: P and cumsum unchanged; only _start_index may have been set above
 
     def next(self, prev_state: Optional[int] = None) -> int:
         """Produce the next frequency index.

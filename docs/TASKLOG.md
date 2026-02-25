@@ -81,6 +81,7 @@
 | X-02 | Compare reward curve shape with paper's Figure 9 | ⬜ TODO | |
 | X-03 | Verify hit rate converges near 97% (Table 3) | ⬜ TODO | |
 | X-04 | Hyperparameter sensitivity analysis (if needed) | ⬜ TODO | |
+| X-05 | Benchmark device 0 vs 1 vs multi: run parallel trains (e.g. `--device 0` and `--device 1`), monitor CPU/GPU activity, compare performance and document (e.g. graphs) | ⬜ TODO | See [TRAINING_VERIFICATION.md](TRAINING_VERIFICATION.md) §6 |
 
 ---
 

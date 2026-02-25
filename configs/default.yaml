@@ -6,6 +6,21 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Run / Reproducibility
+# -----------------------------------------------------------------------------
+# device_id: GPU to use (0, 1, ...). Default 0 = use only cuda:0.
+device_id: 0
+# use_multi_gpu: if true and 2+ GPUs, use DataParallel; else use single GPU (device_id only).
+use_multi_gpu: false
+# seed: integer (e.g. 42) for reproducible runs; omit or null for random.
+# same_episode_seed: true  → every episode the generator uses the same RNG seed (e.g. 42).
+#   So the Markov P and random draws are identical — but the pulse train also depends on
+#   start_index (see random_start_index). Only if random_start_index is false do you get
+#   the same 10k-pulse sequence every episode. false → seed+episode per episode.
+seed: 42
+same_episode_seed: true
+
+# -----------------------------------------------------------------------------
 # Physical Parameters (Paper Table 1)
 # -----------------------------------------------------------------------------
 physics:
@@ -38,8 +53,9 @@ radar:
     stay_prob: 0.7
     sparsity: 0.1
     sigma_subband: 1.5
-  start_index: 0
-  # markov_transition_path: "path/to/P.npy"  # optional override
+  start_index: 0       # used when random_start_index is false
+  random_start_index: true  # true: each episode starts at a different state (0..239); same P and RNG seed, but different 10k-pulse sequence per episode
+  markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"  # default: run python -m scripts.init_markov_matrix once
   # Derived: B = 1 GHz, delta_f = 100 MHz, sub-pulse BW = 25 MHz
   # Derived: state_dim = M × K! = 10 × 24 = 240
 
@@ -60,12 +76,14 @@ environment:
 # Network Architecture (Paper Table 2, Figures 6-8)
 # -----------------------------------------------------------------------------
 network:
-  state_dim: 240     # Input dimension (index space)
+  state_dim: 240     # Input dimension (index space = K! × M = 24 × 10)
   action_dim: 240    # Output dimension (number of actions)
-  embed_dim: 64      # Embedding dimension; GRU input size (32, 64, 128)
-  hidden_dim: 128    # GRU hidden size
-  num_heads: 8       # Multi-head attention heads
-  fc_dim: 64         # FC1 and FC2 width
+  use_embedding: false  # false → one-hot input, GRU(240,128) per paper Table 2
+                        # true  → learned Embedding(240, embed_dim) before GRU
+  embed_dim: 64      # Only used when use_embedding=true; GRU input size
+  hidden_dim: 128    # GRU hidden size (paper Table 2)
+  num_heads: 8       # Multi-head attention heads (paper Table 2)
+  fc_dim: 64         # FC1 and FC2 width (paper Table 2)
   sigma_init: 0.5    # NoisyLinear initial noise scale
 
 # -----------------------------------------------------------------------------
@@ -75,9 +93,11 @@ training:
   gamma: 0.9               # Discount factor
   learning_rate: 0.009      # Learning rate
   batch_size: 256           # Minibatch size for PER sampling
-  epsilon_start: 0.995      # Initial exploration rate
+  epsilon_start: 0.995    # Paper Table 2: 0.995 → 0.005 exponential decay
   epsilon_end: 0.005        # Final exploration rate
-  epsilon_decay_episodes: 100  # Episodes over which epsilon decays
+  epsilon_decay_mode: "per_episode"  # per_episode | per_step (see docs/EPSILON_DECAY.md)
+  epsilon_decay_episodes: 100  # Episodes over which epsilon decays (used when mode=per_episode)
+  epsilon_decay_steps: 1000000  # Env steps over which epsilon decays (used when mode=per_step; e.g. 100*10k)
   target_update_freq: 1     # Target network update frequency (per episode)
 
 # -----------------------------------------------------------------------------

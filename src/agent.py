@@ -211,8 +211,9 @@ class JammingAgent:
         self.seq_len: int = config["environment"]["history_len"]
         self.gamma: float = train_cfg["gamma"]
         self.batch_size: int = train_cfg["batch_size"]
+        gpu_id = config.get("device_id", 0)
         self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+            f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
 
         # --- Networks (Paper Figure 5: policy net + target net) -----------
         net_kwargs = dict(
@@ -223,11 +224,20 @@ class JammingAgent:
             num_heads=net_cfg["num_heads"],
             fc_dim=net_cfg["fc_dim"],
             sigma_init=net_cfg.get("sigma_init", 0.5),
+            use_embedding=net_cfg.get("use_embedding", False),
         )
         self.policy_net = GADuelingDQN(**net_kwargs).to(self.device)
         self.target_net = GADuelingDQN(**net_kwargs).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
+
+        # --- Multi-GPU: DataParallel only when use_multi_gpu=true and 2+ GPUs ---
+        # device_ids[0] must match self.device (where the module already lives)
+        if config.get("use_multi_gpu", False) and torch.cuda.is_available() and torch.cuda.device_count() > 1:
+            primary = self.device.index if self.device.type == "cuda" else 0
+            device_ids = [primary] + [i for i in range(torch.cuda.device_count()) if i != primary]
+            self.policy_net = torch.nn.DataParallel(self.policy_net, device_ids=device_ids)
+            self.target_net = torch.nn.DataParallel(self.target_net, device_ids=device_ids)
 
         # --- Optimizer ----------------------------------------------------
         self.optimizer = torch.optim.Adam(
@@ -236,14 +246,41 @@ class JammingAgent:
         # --- Epsilon schedule (Paper Section 3.3) -------------------------
         # "Exploration rate ε follows an exponential decay schedule from
         #  0.995 to 0.005, maintaining a consistent decay rate."
-        self.epsilon: float = train_cfg["epsilon_start"]
+        # Optional: epsilon_waypoints = [[progress_0, eps_0], [progress_1, eps_1], ...]
+        # with progress in [0, 1] over the run; epsilon is linearly interpolated (smooth).
+        waypoints = train_cfg.get("epsilon_waypoints")
+        if waypoints and len(waypoints) >= 2:
+            self._epsilon_waypoints: list[tuple[float, float]] = sorted(
+                [(float(p), float(e)) for p, e in waypoints]
+            )
+            self._use_epsilon_schedule = True
+            self.epsilon = max(0.0, min(1.0, self._epsilon_waypoints[0][1]))
+        else:
+            self._epsilon_waypoints = []
+            self._use_epsilon_schedule = False
+            self.epsilon = train_cfg["epsilon_start"]
+
         self.epsilon_start: float = train_cfg["epsilon_start"]
         self.epsilon_end: float = train_cfg["epsilon_end"]
-        decay_episodes = train_cfg["epsilon_decay_episodes"]
+        decay_mode = train_cfg.get("epsilon_decay_mode", "per_episode")
+        if decay_mode == "per_step":
+            decay_denom = max(int(train_cfg.get("epsilon_decay_steps", 1_000_000)), 1)
+        else:
+            decay_denom = max(int(train_cfg.get("epsilon_decay_episodes", 100)), 1)
         self.epsilon_decay: float = (
-            (self.epsilon_end / self.epsilon_start)
-            ** (1.0 / max(decay_episodes, 1))
+            (self.epsilon_end / self.epsilon_start) ** (1.0 / decay_denom)
         )
+
+        # --- VDBE: TD-error-based adaptive epsilon (Tokic, KI 2010) -------
+        self._vdbe_mode: bool = train_cfg.get("epsilon_mode") == "vdbe"
+        if self._vdbe_mode:
+            self._vdbe_beta: float = float(train_cfg.get("vdbe_beta", 0.2))
+            self._vdbe_alpha: float = float(train_cfg.get("vdbe_ema_alpha", 0.1))
+            self._vdbe_eps_min: float = float(train_cfg.get("vdbe_eps_min", 0.01))
+            self._vdbe_eps_max: float = float(train_cfg.get("vdbe_eps_max", 0.99))
+            self._vdbe_td_scale: float = float(train_cfg.get("vdbe_td_scale", 20.0))
+            self._vdbe_ema_td: float = 1.0
+            self._use_epsilon_schedule = True
 
         # --- Prioritized Experience Replay --------------------------------
         self.memory = PrioritizedReplayBuffer(
@@ -339,8 +376,8 @@ class JammingAgent:
 
     def reset_hidden(self) -> None:
         """Zero-initialize the GRU hidden state at the start of an episode."""
-        self.hidden = self.policy_net.init_hidden(
-            batch_size=1, device=self.device)
+        net = getattr(self.policy_net, "module", self.policy_net)
+        self.hidden = net.init_hidden(batch_size=1, device=self.device)
 
     # ------------------------------------------------------------------
     # Memory
@@ -401,8 +438,8 @@ class JammingAgent:
         next_state_batch = self._encode_batch(next_state_hists).to(self.device)
 
         # --- Re-sample noise for this training step ---
-        self.policy_net.reset_noise()
-        self.target_net.reset_noise()
+        getattr(self.policy_net, "module", self.policy_net).reset_noise()
+        getattr(self.target_net, "module", self.target_net).reset_noise()
 
         # --- Current Q-values: Q_policy(s, a) ---
         # Algorithm 1, line 14
@@ -437,6 +474,18 @@ class JammingAgent:
         # --- Update PER priorities ---
         self.memory.update_priorities(tree_indices, td_errors)
 
+        # --- VDBE: update epsilon from batch TD error ---
+        if self._vdbe_mode:
+            mean_abs_td = float(np.abs(td_errors).mean())
+            scale = max(1e-6, self._vdbe_td_scale)
+            scaled_td = mean_abs_td / scale
+            self._vdbe_ema_td = (
+                self._vdbe_alpha * scaled_td
+                + (1.0 - self._vdbe_alpha) * self._vdbe_ema_td
+            )
+            raw_eps = 1.0 - float(np.exp(-self._vdbe_beta * self._vdbe_ema_td))
+            self.epsilon = max(self._vdbe_eps_min, min(self._vdbe_eps_max, raw_eps))
+
         self.train_steps += 1
         return loss.item()
 
@@ -453,18 +502,46 @@ class JammingAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def decay_epsilon(self) -> None:
-        """Apply one step of exponential ε decay."""
+        """Apply one step of exponential ε decay (ignored when using waypoints or VDBE)."""
+        if self._use_epsilon_schedule or self._vdbe_mode:
+            return
         self.epsilon = max(
             self.epsilon_end, self.epsilon * self.epsilon_decay)
+
+    def update_epsilon_from_schedule(self, progress: float) -> None:
+        """Set epsilon from waypoint schedule by linear interpolation (smooth in [0,1]).
+
+        progress: 0 = start of run, 1 = end of run (e.g. (episode - 1) / (num_episodes - 1)).
+        Only has effect when training.epsilon_waypoints is set in config.
+        """
+        if not self._use_epsilon_schedule or not self._epsilon_waypoints:
+            return
+        progress = max(0.0, min(1.0, float(progress)))
+        wp = self._epsilon_waypoints
+        if progress <= wp[0][0]:
+            self.epsilon = wp[0][1]
+        elif progress >= wp[-1][0]:
+            self.epsilon = wp[-1][1]
+        else:
+            for i in range(len(wp) - 1):
+                if wp[i][0] <= progress <= wp[i + 1][0]:
+                    denom = wp[i + 1][0] - wp[i][0]
+                    t = (progress - wp[i][0]) / denom if denom > 0 else 1.0
+                    self.epsilon = wp[i][1] + t * (wp[i + 1][1] - wp[i][1])
+                    break
+        self.epsilon = max(0.0, min(1.0, self.epsilon))
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
     def save(self, path: str) -> None:
+        # state_dict() on DataParallel returns inner module's state (no "module." prefix)
+        policy_sd = getattr(self.policy_net, "module", self.policy_net).state_dict()
+        target_sd = getattr(self.target_net, "module", self.target_net).state_dict()
         torch.save({
-            "policy_net": self.policy_net.state_dict(),
-            "target_net": self.target_net.state_dict(),
+            "policy_net": policy_sd,
+            "target_net": target_sd,
             "optimizer": self.optimizer.state_dict(),
             "epsilon": self.epsilon,
             "train_steps": self.train_steps,
@@ -472,8 +549,8 @@ class JammingAgent:
 
     def load(self, path: str) -> None:
         ckpt = torch.load(path, map_location=self.device)
-        self.policy_net.load_state_dict(ckpt["policy_net"])
-        self.target_net.load_state_dict(ckpt["target_net"])
+        getattr(self.policy_net, "module", self.policy_net).load_state_dict(ckpt["policy_net"])
+        getattr(self.target_net, "module", self.target_net).load_state_dict(ckpt["target_net"])
         self.optimizer.load_state_dict(ckpt["optimizer"])
         self.epsilon = ckpt["epsilon"]
         self.train_steps = ckpt.get("train_steps", 0)

@@ -1,10 +1,11 @@
 # =============================================================================
-# Test Training — Short runs for dry-run and verification
+# Epsilon Scenario 3: Low → high → low (prompts/00.txt)
 # =============================================================================
-# Same structure as default.yaml; reduced episodes and pulses for quick checks.
-# Use with: python -m scripts.training_test  or  python -m src.train --config configs/test_training.yaml
+# 0.005 → 0.995 → 0.005 over run progress.
 # =============================================================================
 
+device_id: 0
+use_multi_gpu: false
 seed: 42
 same_episode_seed: true
 
@@ -19,9 +20,9 @@ physics:
 radar:
   M: 10
   K: 4
-  f_low: 10.0e+9   # PyYAML: signed exponent (e+9) parses as float
+  f_low: 10.0e+9
   f_high: 11.0e+9
-  generator_mode: "uniform"
+  generator_mode: "markov"
   reset_generator_on_episode: true
   periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
   lcg_params: { a: 1103515245, c: 12345, m: 2147483648 }
@@ -29,10 +30,11 @@ radar:
   markov_subband_params: { stay_prob: 0.7, sparsity: 0.1, sigma_subband: 1.5 }
   start_index: 0
   random_start_index: true
+  markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"
 
 episode:
-  max_pulses: 500      # short for test
-  num_episodes: 2      # 1–2 episodes for dry-run
+  max_pulses: 10000
+  num_episodes: 100
 
 environment:
   history_len: 10
@@ -40,32 +42,34 @@ environment:
 network:
   state_dim: 240
   action_dim: 240
-  use_embedding: false  # false → one-hot (paper); true → learned embedding
-  embed_dim: 64         # only used when use_embedding=true
+  use_embedding: false
+  embed_dim: 64
   hidden_dim: 128
   num_heads: 8
   fc_dim: 64
   sigma_init: 0.5
 
+# Scenario 3: 0.005 → 0.995 (mid) → 0.005
 training:
   gamma: 0.9
   learning_rate: 0.009
-  batch_size: 64       # smaller for quick test
-  epsilon_start: 0.995
+  batch_size: 256
+  epsilon_start: 0.005
   epsilon_end: 0.005
-  epsilon_decay_episodes: 2
+  epsilon_waypoints: [[0, 0.005], [0.5, 0.995], [1, 0.005]]
   target_update_freq: 1
+  early_stop_reward: 500000
 
 replay:
-  buffer_size: 5000
+  buffer_size: 100000
   alpha: 0.6
   beta_start: 0.4
   beta_end: 1.0
-  beta_anneal_episodes: 2
+  beta_anneal_episodes: 100
   min_priority: 1.0e-6
 
 logging:
   log_interval: 1
-  save_interval: 2
-  plot_interval: 2
+  save_interval: 10
+  plot_interval: 10
   results_dir: "results"

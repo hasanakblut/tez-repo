@@ -1,0 +1,24 @@
+Şimdi kapsamlı bir training cycle oluşturacağız. Training içerisinde başlangıçtan
+itibaren epsilon keşif ve exploit dengesini birkaç senaryoya göre değiştireceğiz.
+
+İlk senaryoda en çok keşiften ilerledikçe maximize etmeye uğraşacak (bunun bilgisini
+gerçekte webde falan doğrula). Başka bir senaryoda başta biraz exploit edip sonra
+keşif yapacak, en sonda da ortalarda bir yerde bir süre durup tekrar exploit edecek.
+
+Bunların sayısal olarak değerini vereceğim ama öncesinde şu soruyu da sorayım:
+Bu değerin [0, 1] arasında değer alması training rundaki episode dağılımına göre
+linear mi artırılıyor? Ya da hangi case'de artırılıyor?
+
+Değerler:
+- Senaryo 1: Full exploration — 0.995'ten 0.005'lere giden bir senaryo.
+- Senaryo 2: 0.25'lerden başlayıp 0.75'lere gidip 0.5 üzerinden tekrar 0.25.
+- Senaryo 3: 0.005'ten 0.995'e sonra tekrar 0.005. Bunu tek runda ayrı ayrı art arda çalıştırıp
+  loglarını da ayrıca ifade ederek kaydetmiş olacağız. Geri dönüp baktığımızda
+  bu uzun süren sürecin raporlarını görmek adına bir episode içinde elde edilen.
+
+---
+Uygulama (waypoint tabanlı, smooth [0,1]):
+- progress = (episode - 1) / (num_episodes - 1) ile [0,1]; epsilon waypoint'ler arası linear interpolasyon.
+- Config: training.epsilon_waypoints = [[progress_0, eps_0], [progress_1, eps_1], ...]
+- Üç senaryo: configs/epsilon_scenario1_full_exploration.yaml, epsilon_scenario2_exploit_explore.yaml, epsilon_scenario3_low_high_low.yaml
+- Üçünü art arda: python -m scripts.run_epsilon_scenarios (repo root). Loglar results/runs/run_* içinde.

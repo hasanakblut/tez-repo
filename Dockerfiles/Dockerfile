@@ -1,8 +1,9 @@
 FROM python:3.13-slim
 
-# Install Git and required libraries
+# Install Git, procps (watch for nvidia-smi), and required libraries
 RUN apt-get update && apt-get install --no-install-recommends -y \
     git \
+    procps \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

@@ -168,6 +168,7 @@ class RadarEnv(gym.Env):
         cfg = config or {}
 
         # --- Physical parameters (Paper Table 1) -------------------------
+        # Loaded from config (physics section via build_env_config); used to compute JSR coefficient below.
         self.A_R: float = cfg.get("A_R", 1.0)       # Radar pulse amplitude (V)
         self.A_J: float = cfg.get("A_J", 5.0)       # Jammer pulse amplitude (V)
         self.h_t: float = cfg.get("h_t", 0.1)       # Radar-target channel gain
@@ -194,12 +195,13 @@ class RadarEnv(gym.Env):
         self.history_len: int = cfg.get("history_len", 10)
 
         # --- Pre-compute base JSR (constant across episode) ---------------
-        # Paper Equation 15 (with τ_R = τ_J cancelling out):
-        #   JSR = (A_J² × h_j × L) / (A_R² × h_t² × σ)
+        # Paper Equation 5 (JSR at radar) then Eq.15 (reward): r_t = JSR_base × Num.
+        # With Table 1: JSR_base = (A_J² × h_j × L) / (A_R² × h_t² × σ); τ_R = τ_J cancels.
         self.jsr_base: float = (
             (self.A_J ** 2 * self.h_j * self.L)
             / (self.A_R ** 2 * self.h_t ** 2 * self.sigma)
         )
+        # Theoretical max (for reference): one pulse = jsr_base × K; episode = max_pulses × jsr_base × K.
 
         # --- Gymnasium spaces ---------------------------------------------
         self.observation_space = spaces.Discrete(self.state_dim)
@@ -253,7 +255,8 @@ class RadarEnv(gym.Env):
         """
         super().reset(seed=seed)
         if self._reset_generator_on_episode:
-            self._generator.reset(seed)
+            start_index = options.get("start_index") if options else None
+            self._generator.reset(seed=seed, start_index=start_index)
 
         self._current_state = self._generate_next_state(None)
         self._pulse_count = 0
@@ -289,6 +292,7 @@ class RadarEnv(gym.Env):
 
         num_matches = count_subpulse_matches(
             action, next_state, self.num_perms)
+        # Reward = JSR coefficient (from config, Eq.5) × Num: linear scale; episode total = sum of these.
         reward = self.jsr_base * num_matches
 
         action_subband = action // self.num_perms
@@ -355,3 +359,7 @@ class RadarEnv(gym.Env):
     def encode_index(self, subband_id: int, perm: tuple) -> int:
         """Public wrapper around :func:`subpulses_to_index`."""
         return subpulses_to_index(subband_id, perm, self.num_perms)
+
+    def get_transition_matrix(self):
+        """Return a copy of the generator's Markov P if mode is markov/markov_subband, else None."""
+        return self._generator.get_transition_matrix()

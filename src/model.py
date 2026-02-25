@@ -97,8 +97,14 @@ class GADuelingDQN(nn.Module):
     """GRU-Attention-based Dueling Deep Q Network.
 
     Data flow (see Paper Figure 7):
-        indices (batch, seq_len) ──► Embedding ──► (batch, seq_len, embed_dim)
-                                                         │
+
+      use_embedding=False (paper default — one-hot):
+        indices (batch, seq_len) ──► one-hot(state_dim) ──► GRU(240, 128)
+
+      use_embedding=True (learned dense vectors):
+        indices (batch, seq_len) ──► Embedding(state_dim, embed_dim) ──► GRU(embed_dim, 128)
+
+      … then in both cases:
                                                         GRU
                                                          │
                                               Multi-Head Self-Attention
@@ -114,13 +120,15 @@ class GADuelingDQN(nn.Module):
                                        Q = V + (A − mean(A))
 
     Args:
-        state_dim:  Number of discrete states (default 240).
-        action_dim: Number of possible actions (default 240).
-        embed_dim:  Embedding dimension; GRU input size (default 64).
-        hidden_dim: GRU hidden size (default 128).
-        num_heads:  Attention heads (default 8).
-        fc_dim:     Width of FC1 / FC2 (default 64).
-        sigma_init: Initial noise scale for NoisyLinear layers (default 0.5).
+        state_dim:      Number of discrete states (default 240).
+        action_dim:     Number of possible actions (default 240).
+        embed_dim:      Embedding dimension when use_embedding=True (default 64).
+        hidden_dim:     GRU hidden size (default 128).
+        num_heads:      Attention heads (default 8).
+        fc_dim:         Width of FC1 / FC2 (default 64).
+        sigma_init:     Initial noise scale for NoisyLinear layers (default 0.5).
+        use_embedding:  If False, use one-hot encoding (paper Table 2: GRU(240,128)).
+                        If True, use a learned Embedding layer before GRU.
     """
 
     def __init__(
@@ -132,24 +140,30 @@ class GADuelingDQN(nn.Module):
         num_heads: int = 8,
         fc_dim: int = 64,
         sigma_init: float = 0.5,
+        use_embedding: bool = False,
     ):
         super().__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
+        self.use_embedding = use_embedding
 
-        # --- Embedding: indices → dense vectors (prompts 06, 9) ------------
-        self.embedding = nn.Embedding(
-            num_embeddings=state_dim,
-            embedding_dim=embed_dim,
-        )
+        # --- Input encoding ------------------------------------------------
+        if use_embedding:
+            self.embedding = nn.Embedding(
+                num_embeddings=state_dim,
+                embedding_dim=embed_dim,
+            )
+            gru_input_size = embed_dim
+        else:
+            self.embedding = None
+            gru_input_size = state_dim  # one-hot → GRU(240, 128) per paper
 
         # --- Sequence Processor (NN Module, Paper Figure 7) ---------------
 
-        # GRU: input is embedded sequence (batch, seq_len, embed_dim).
         self.gru = nn.GRU(
-            input_size=embed_dim,
+            input_size=gru_input_size,
             hidden_size=hidden_dim,
             batch_first=True,
         )
@@ -202,8 +216,12 @@ class GADuelingDQN(nn.Module):
             q_values: Q-values for every action.  Shape (batch, action_dim).
             hidden:   Updated GRU hidden state.   Shape (1, batch, hidden_dim).
         """
-        # 0) Embedding: (batch, seq_len) → (batch, seq_len, embed_dim)
-        x = self.embedding(x)
+        # 0) Input encoding: indices → dense representation
+        if self.use_embedding:
+            x = self.embedding(x)  # (batch, seq_len, embed_dim)
+        else:
+            x = F.one_hot(x, num_classes=self.state_dim).float()  # (batch, seq_len, state_dim)
+
         # 1) GRU — temporal encoding
         gru_out, hidden = self.gru(x, hidden)
         # gru_out: (batch, seq_len, hidden_dim)

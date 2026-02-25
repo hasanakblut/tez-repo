@@ -285,6 +285,15 @@ From the paper (Section 3.2):
 
 The agent maximizes the cumulative reward across the 10,000-pulse episode.
 
+### 5.6 Code alignment with paper (reward scenario)
+
+Implementation in `src/env.py` matches the paper exactly:
+
+- **Parameters:** Table 1 values are read from config (`physics` / `radar`); defaults are A_R=1, A_J=5, h_t=0.1, h_j=0.1, σ=0.1, L=0.05 (Paper Section 4, Table 1).
+- **JSR (Equation 5):** `jsr_base = (A_J² × h_j × L) / (A_R² × h_t² × σ)` — computed once in `__init__` from config; this is the **reward coefficient** (linear scale).
+- **Per-pulse reward (Equation 15):** `r_t = jsr_base × Num` in `step()`; `Num` is the position-wise sub-pulse match count (0–K) from `count_subpulse_matches(action, next_state)`.
+- **Episode total reward:** Sum of `r_t` over `max_pulses` steps (no extra scaling): total = jsr_base × (sum of Num over episode). So reward accumulation is **linear** in both the coefficient and the match counts.
+
 ---
 
 ## 6. Sub-Pulse Matching Logic
