@@ -39,9 +39,9 @@ training:
   batch_size: 256
   epsilon_start: 0.995
   epsilon_end: 0.005
-  epsilon_decay_mode: "per_episode"   # per_episode | per_step (see docs/EPSILON_DECAY.md)
-  epsilon_decay_episodes: 100
-  epsilon_decay_steps: 1000000        # used when mode=per_step (e.g. 100*10k)
+  epsilon_decay_mode: "per_step"      # per_episode = once per episode; per_step = every env step (use epsilon_decay_steps)
+  epsilon_decay_episodes: 100         # used when mode=per_episode
+  epsilon_decay_steps: 1000000        # used when mode=per_step (e.g. 100*10k pulses)
   target_update_freq: 1
 
 # -----------------------------------------------------------------------------

@@ -1,1 +1,5 @@
+## Training with default config
+python -m src.train
+
+
 watch -n 1 nvidia-smi
