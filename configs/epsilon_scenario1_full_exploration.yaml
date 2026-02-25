@@ -5,34 +5,17 @@
 # progress in [0,1]; epsilon linearly interpolated between waypoints.
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# Run / Reproducibility
+# -----------------------------------------------------------------------------
 device_id: 0
 use_multi_gpu: false
 seed: 42
 same_episode_seed: true
 
-physics:
-  A_R: 1.0
-  A_J: 5.0
-  h_t: 0.1
-  h_j: 0.1
-  sigma: 0.1
-  L: 0.05
-
-radar:
-  M: 10
-  K: 4
-  f_low: 10.0e+9
-  f_high: 11.0e+9
-  generator_mode: "markov"
-  reset_generator_on_episode: true
-  periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
-  lcg_params: { a: 1103515245, c: 12345, m: 2147483648 }
-  markov_params: { sparsity: 0.1, delta_limit: 20 }
-  markov_subband_params: { stay_prob: 0.7, sparsity: 0.1, sigma_subband: 1.5 }
-  start_index: 0
-  random_start_index: true
-  markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"
-
+# -----------------------------------------------------------------------------
+# 1) Episode, Hyperparameters, Network, Environment
+# -----------------------------------------------------------------------------
 episode:
   max_pulses: 10000
   num_episodes: 100
@@ -59,8 +42,38 @@ training:
   epsilon_end: 0.005
   epsilon_waypoints: [[0, 0.995], [1, 0.005]]
   target_update_freq: 1
-  early_stop_reward: 500000  # stop run when an episode total reward >= this; then next scenario
+  early_stop_reward: 500000
 
+# -----------------------------------------------------------------------------
+# 2) Radar — Generator mode and method parameters
+# -----------------------------------------------------------------------------
+radar:
+  generator_mode: "markov"
+  reset_generator_on_episode: true
+  periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
+  lcg_params:
+    a: 1103515245
+    c: 12345
+    m: 2147483648
+  markov_params:
+    sparsity: 0.1
+    delta_limit: 20
+  markov_subband_params:
+    stay_prob: 0.7
+    sparsity: 0.1
+    sigma_subband: 1.5
+  start_index: 0
+  random_start_index: true
+  markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"
+  # --- Fixed radar values ---
+  M: 10
+  K: 4
+  f_low: 10.0e+9
+  f_high: 11.0e+9
+
+# -----------------------------------------------------------------------------
+# 3) Prioritized Experience Replay
+# -----------------------------------------------------------------------------
 replay:
   buffer_size: 100000
   alpha: 0.6
@@ -69,8 +82,22 @@ replay:
   beta_anneal_episodes: 100
   min_priority: 1.0e-6
 
+# -----------------------------------------------------------------------------
+# 4) Logging & Plotting
+# -----------------------------------------------------------------------------
 logging:
   log_interval: 1
   save_interval: 10
   plot_interval: 10
   results_dir: "results"
+
+# -----------------------------------------------------------------------------
+# 5) Radar — Physical parameters (Paper Table 1)
+# -----------------------------------------------------------------------------
+physics:
+  A_R: 1.0
+  A_J: 5.0
+  h_t: 0.1
+  h_j: 0.1
+  sigma: 0.1
+  L: 0.05

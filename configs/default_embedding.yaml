@@ -1,32 +1,51 @@
 # =============================================================================
 # GA-Dueling DQN — Embedding Variant Configuration
 # =============================================================================
-# Same as default.yaml but uses a learned Embedding layer before GRU instead
-# of one-hot encoding.  This reduces GRU input dimensionality and allows the
-# network to learn semantic proximity between frequency indices.
-#
-# Usage:  python -m src.train --config configs/default_embedding.yaml
+# Same as default.yaml but uses a learned Embedding layer before GRU.
+# Usage: python -m src.train --config configs/default_embedding.yaml
 # =============================================================================
 
-# --- Run / Reproducibility ------------------------------------------------
+# -----------------------------------------------------------------------------
+# Run / Reproducibility
+# -----------------------------------------------------------------------------
+device_id: 0
+use_multi_gpu: false
 seed: 42
-same_episode_seed: true   # true = same RNG seed every episode; actual pulse train also depends on start_index / random_start_index
+same_episode_seed: true
 
-# --- Physical Parameters (Paper Table 1) ------------------------------------
-physics:
-  A_R: 1.0
-  A_J: 5.0
-  h_t: 0.1
-  h_j: 0.1
-  sigma: 0.1
-  L: 0.05
+# -----------------------------------------------------------------------------
+# 1) Episode, Hyperparameters, Network, Environment
+# -----------------------------------------------------------------------------
+episode:
+  max_pulses: 10000
+  num_episodes: 100
 
-# --- Radar Parameters (Paper Section 2.1, Section 4) ------------------------
+environment:
+  history_len: 10
+
+network:
+  state_dim: 240
+  action_dim: 240
+  use_embedding: true    # learned Embedding(240, embed_dim) before GRU
+  embed_dim: 64          # GRU input size becomes 64 instead of 240
+  hidden_dim: 128
+  num_heads: 8
+  fc_dim: 64
+  sigma_init: 0.5
+
+training:
+  gamma: 0.9
+  learning_rate: 0.009
+  batch_size: 256
+  epsilon_start: 0.995
+  epsilon_end: 0.005
+  epsilon_decay_episodes: 100
+  target_update_freq: 1
+
+# -----------------------------------------------------------------------------
+# 2) Radar — Generator mode and method parameters
+# -----------------------------------------------------------------------------
 radar:
-  M: 10
-  K: 4
-  f_low: 10.0e+9
-  f_high: 11.0e+9
   generator_mode: "markov"
   reset_generator_on_episode: true
   periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
@@ -42,40 +61,17 @@ radar:
     sparsity: 0.1
     sigma_subband: 1.5
   start_index: 0
-  random_start_index: true  # true: each episode starts at a different state (0..239); same P and RNG seed, but different 10k-pulse sequence per episode
+  random_start_index: true
   markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"
+  # --- Fixed radar values ---
+  M: 10
+  K: 4
+  f_low: 10.0e+9
+  f_high: 11.0e+9
 
-# --- Episode Parameters (Paper Section 4) -----------------------------------
-episode:
-  max_pulses: 10000
-  num_episodes: 100
-
-# --- Environment -------------------------------------------------------------
-environment:
-  history_len: 10
-
-# --- Network Architecture ----------------------------------------------------
-network:
-  state_dim: 240
-  action_dim: 240
-  use_embedding: true       # ← learned Embedding(240, embed_dim) before GRU
-  embed_dim: 64             # GRU input size becomes 64 instead of 240
-  hidden_dim: 128
-  num_heads: 8
-  fc_dim: 64
-  sigma_init: 0.5
-
-# --- Training Hyperparameters ------------------------------------------------
-training:
-  gamma: 0.9
-  learning_rate: 0.009
-  batch_size: 256
-  epsilon_start: 0.995
-  epsilon_end: 0.005
-  epsilon_decay_episodes: 100
-  target_update_freq: 1
-
-# --- Prioritized Experience Replay -------------------------------------------
+# -----------------------------------------------------------------------------
+# 3) Prioritized Experience Replay
+# -----------------------------------------------------------------------------
 replay:
   buffer_size: 100000
   alpha: 0.6
@@ -84,9 +80,22 @@ replay:
   beta_anneal_episodes: 100
   min_priority: 1.0e-6
 
-# --- Logging & Checkpoints ---------------------------------------------------
+# -----------------------------------------------------------------------------
+# 4) Logging & Plotting
+# -----------------------------------------------------------------------------
 logging:
   log_interval: 1
   save_interval: 10
   plot_interval: 10
   results_dir: "results"
+
+# -----------------------------------------------------------------------------
+# 5) Radar — Physical parameters (Paper Table 1)
+# -----------------------------------------------------------------------------
+physics:
+  A_R: 1.0
+  A_J: 5.0
+  h_t: 0.1
+  h_j: 0.1
+  sigma: 0.1
+  L: 0.05
