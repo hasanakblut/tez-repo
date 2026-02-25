@@ -24,8 +24,6 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from src.env_utils import FrequencyGenerator
-
 
 # ---------------------------------------------------------------------------
 # Frequency mapping utilities
@@ -215,30 +213,8 @@ class RadarEnv(gym.Env):
         self._total_subband_hits: int = 0
         self._history: list = []
 
-        # --- Frequency generator (prompts 06, 9) --------------------------
-        gen_cfg = {"radar": cfg}
-        self._generator = FrequencyGenerator(
-            config=gen_cfg,
-            state_dim=self.state_dim,
-            rng=None,
-        )
-        self._reset_generator_on_episode: bool = cfg.get(
-            "reset_generator_on_episode", True
-        )
-
-    # ------------------------------------------------------------------
-    # Radar frequency generation
-    # ------------------------------------------------------------------
-
-    def _generate_next_state(self, prev_state: Optional[int] = None) -> int:
-        """Select the radar's next frequency index via FrequencyGenerator.
-
-        Returns:
-            Frequency index in [0, state_dim).
-        """
-        return self._generator.next(
-            prev_state if prev_state is not None else self._current_state
-        )
+        # --- Pulse train: placeholder until new structure is in place ------
+        self._rng: np.random.Generator = np.random.default_rng()
 
     # ------------------------------------------------------------------
     # Gymnasium API
@@ -254,11 +230,11 @@ class RadarEnv(gym.Env):
         Returns the first radar observation s_0 and an info dict.
         """
         super().reset(seed=seed)
-        if self._reset_generator_on_episode:
-            start_index = options.get("start_index") if options else None
-            self._generator.reset(seed=seed, start_index=start_index)
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
 
-        self._current_state = self._generate_next_state(None)
+        # Placeholder: first state random until pulse train structure is added
+        self._current_state = int(self._rng.integers(0, self.state_dim))
         self._pulse_count = 0
         self._total_matches = 0
         self._total_full_hits = 0
@@ -288,7 +264,8 @@ class RadarEnv(gym.Env):
             truncated:   Always False (no external truncation).
             info:        Logging dict with hit rate, match count, etc.
         """
-        next_state = self._generate_next_state(self._current_state)
+        # Placeholder next state until pulse train structure is in place
+        next_state = int(self._rng.integers(0, self.state_dim))
 
         num_matches = count_subpulse_matches(
             action, next_state, self.num_perms)
@@ -361,5 +338,5 @@ class RadarEnv(gym.Env):
         return subpulses_to_index(subband_id, perm, self.num_perms)
 
     def get_transition_matrix(self):
-        """Return a copy of the generator's Markov P if mode is markov/markov_subband, else None."""
-        return self._generator.get_transition_matrix()
+        """Return None; transition matrix will come from new pulse train structure if needed."""
+        return None

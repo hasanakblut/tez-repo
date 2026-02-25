@@ -1,5 +1,6 @@
 ## Training with default config
 python -m src.train
 
+python -m src.train --config configs/test_training.yaml
 
 watch -n 1 nvidia-smi

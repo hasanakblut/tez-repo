@@ -28,6 +28,7 @@ matplotlib==3.10.8
 # Gymnasium does not depend on PyTorch; compatible with Python 3.8–3.12.
 gymnasium==1.2.3
 tqdm==4.67.3
+tensorboard==2.20.0
 
 --find-links https://download.pytorch.org/whl/cu128
 torch==2.10.0 

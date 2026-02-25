@@ -46,7 +46,7 @@ training:
 # 2) Radar — Generator mode and method parameters
 # -----------------------------------------------------------------------------
 radar:
-  generator_mode: "uniform"
+  generator_mode: "markov"    # same as default for consistency
   reset_generator_on_episode: true
   periodic_sequence: [0, 24, 48, 72, 96, 120, 144, 168, 192, 216]
   lcg_params:
@@ -62,6 +62,7 @@ radar:
     sigma_subband: 1.5
   start_index: 0
   random_start_index: true
+  markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"
   # --- Fixed radar values ---
   M: 10
   K: 4
@@ -87,6 +88,8 @@ logging:
   save_interval: 2
   plot_interval: 2
   results_dir: "results"
+  use_tensorboard: true
+  verbose_terminal: false
 
 # -----------------------------------------------------------------------------
 # 5) Radar — Physical parameters (Paper Table 1)

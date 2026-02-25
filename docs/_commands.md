@@ -16,6 +16,10 @@ Proje kökünden (`codes/`) çalıştırın. Tüm komutlar: `python -m ...` ile 
 
 - Config’ler: `configs/default.yaml`, `configs/test_training.yaml`, `configs/epsilon_scenario*.yaml`, `configs/default_embedding.yaml`.
 - Çıktılar: `results/runs/run_<datetime>_<config>_ep<N>/` (log, checkpoint, metrics, plot’lar).
+- **TensorBoard:** Eğitim sırasında metrikler `run_*/tensorboard/` altına yazılır. İnteraktif takip için ayrı terminalde:
+  - Tek run: `tensorboard --logdir=results/runs/run_<id>/tensorboard`
+  - Tüm run’lar: `tensorboard --logdir=results/runs`
+  - Tarayıcıda http://localhost:6006 açılır. `step/*` = pulse bazlı, `episode/*` = episode sonu metrikler. Terminalde anlık loglama `logging.verbose_terminal: false` ile kapatılır (varsayılan TensorBoard kullanırken).
 
 ---
 

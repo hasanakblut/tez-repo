@@ -95,6 +95,8 @@ logging:
   save_interval: 10
   plot_interval: 10
   results_dir: "results"
+  use_tensorboard: true
+  verbose_terminal: false
 
 # -----------------------------------------------------------------------------
 # 5) Radar — Physical parameters (Paper Table 1)

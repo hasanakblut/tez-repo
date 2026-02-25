@@ -22,9 +22,13 @@ import torch
 import yaml
 from tqdm import tqdm
 
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ImportError:
+    SummaryWriter = None  # type: ignore[misc, assignment]
+
 from src.agent import JammingAgent
 from src.env import RadarEnv
-from src.env_utils import FrequencyGenerator
 
 # Project root (so config/results work regardless of cwd)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -197,6 +201,17 @@ def _save_training_plots(
     fig.savefig(plot_dir / "reward_curve.png", dpi=150)
     plt.close(fig)
 
+    # Episode-end reward bar chart (her episode sonundaki reward)
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.bar(episodes, rewards, color="C0", alpha=0.8, edgecolor="C0")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Total reward (episode end)")
+    ax.set_title(f"Episode-end reward ({num_episodes} ep × {max_pulses:,} pulses)")
+    ax.grid(True, alpha=0.3, axis="y")
+    fig.tight_layout()
+    fig.savefig(plot_dir / "episode_rewards.png", dpi=150)
+    plt.close(fig)
+
     # Hit rate curve
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(episodes, hit_rates, color="C1")
@@ -288,29 +303,6 @@ def _save_training_plots(
     return plot_dir
 
 
-def precompute_first_100_indices(
-    env_cfg: dict,
-    seed: int | None,
-    state_dim: int = 240,
-    start_index: int | None = None,
-) -> list[int]:
-    """Pre-compute the first 100 radar indices for this episode (same config + seed + start_index as env).
-    Used so logs can show 'first 100 indices for this trial' for later verification."""
-    if seed is None:
-        rng = np.random.default_rng()
-    else:
-        rng = np.random.default_rng(seed)
-    gen = FrequencyGenerator(config={"radar": env_cfg}, state_dim=state_dim, rng=rng)
-    gen.reset(seed=seed, start_index=start_index)
-    indices = []
-    prev = gen.next(None)
-    indices.append(prev)
-    for _ in range(99):
-        prev = gen.next(prev)
-        indices.append(prev)
-    return indices
-
-
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
@@ -339,17 +331,8 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
 
     # --- Environment ------------------------------------------------------
     env_cfg = build_env_config(cfg)
-    gen_mode = env_cfg.get("generator_mode", "uniform")
-    # Ensure default Markov matrix exists when path is set but file missing
-    markov_path = env_cfg.get("markov_transition_path")
-    if gen_mode in ("markov", "markov_subband") and markov_path:
-        full_path = PROJECT_ROOT / markov_path
-        if not full_path.exists():
-            from scripts.init_markov_matrix import ensure_markov_matrix
-            ensure_markov_matrix(seed=42, mode="markov", config_path=config_path)
-            print(f"Created default Markov matrix: {full_path}")
     env = RadarEnv(config=env_cfg)
-    print(f"Radar generator_mode: {gen_mode} (config: radar.generator_mode; 'markov' için markov_transition_path veya markov_subband_params kullanılır)")
+    print("Radar pulse train: placeholder (uniform random); new structure to be added.")
 
     # --- Agent ------------------------------------------------------------
     agent = JammingAgent(config=cfg)
@@ -369,6 +352,8 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
     log_interval = cfg["logging"]["log_interval"]
     save_interval = cfg["logging"]["save_interval"]
     plot_interval = cfg["logging"].get("plot_interval", save_interval)
+    use_tensorboard = cfg["logging"].get("use_tensorboard", True)
+    verbose_terminal = cfg["logging"].get("verbose_terminal", False)
 
     run_id = _run_id(cfg, config_path)
     run_dir = results_dir / "runs" / f"run_{run_id}"
@@ -378,6 +363,15 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
     plot_dir = run_dir / "training_plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
 
+    writer = None
+    if use_tensorboard and SummaryWriter is not None:
+        tb_dir = run_dir / "tensorboard"
+        tb_dir.mkdir(parents=True, exist_ok=True)
+        writer = SummaryWriter(log_dir=str(tb_dir))
+        print(f"📊 TensorBoard: logdir={tb_dir}  (run: tensorboard --logdir={tb_dir})")
+    elif use_tensorboard and SummaryWriter is None:
+        print("⚠️ TensorBoard is enabled but torch.utils.tensorboard not available; install with: pip install tensorboard")
+
     all_metrics: list = []
     ts_iso = time.strftime("%Y-%m-%d %H:%M:%S")
     run_header = (
@@ -386,14 +380,8 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
         f"  📋 num_episodes: {num_episodes}  max_pulses: {max_pulses}\n"
         f"  🎲 seed: {cfg.get('seed')}\n"
         f"  📁 run_dir: {run_dir}\n"
-        f"  ℹ️  first_100_indices: first 100 radar state indices per episode; derived from seed + start_index each episode (see episode lines for start_index only).\n"
+        f"  ℹ️  Pulse train: new structure to be integrated.\n"
     )
-    P = env.get_transition_matrix()
-    if P is not None:
-        run_header += f"  📊 markov_P: in-code (mode={gen_mode}) top-left 20x20 (same P for whole run):\n"
-        block = P[:20, :20]
-        for r in range(block.shape[0]):
-            run_header += "    " + " ".join(f"{block[r, c]:.4f}" for c in range(block.shape[1])) + "\n"
     run_header += "━━━━━━━━━━━━━━━━━━━━━━\n"
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(run_header)
@@ -405,7 +393,10 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
         # --- Training loop (Paper Algorithm 1) --------------------------------
         print(f"\n🚀 Training: {num_episodes} ep × {max_pulses:,} pulses")
         print(f"📁 {run_dir}")
-        print(f"📋 Log every {log_interval} ep │ Save/plot every {save_interval}/{plot_interval} ep\n")
+        print(f"📋 Log every {log_interval} ep │ Save/plot every {save_interval}/{plot_interval} ep")
+        if use_tensorboard and writer is not None and not verbose_terminal:
+            print("📊 Terminal: sadece episode özeti (detay için TensorBoard)")
+        print()
 
         # Dış bar: bölüm ilerlemesi + toplam ETA
         pbar_ep = tqdm(
@@ -457,6 +448,13 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
             last_obs_index: int | None = None
             last_action: int | None = None
             ep_epsilon_history: list[float] = []
+            ep_step_rewards: list[float] = []  # per-pulse reward for 500-pulse window plots
+            # Sampled every 500 pulses for per-episode dashboard
+            ep_pulse_samples: list[int] = []
+            ep_hit_samples: list[float] = []
+            ep_avg_match_samples: list[float] = []
+            ep_eff_samples: list[float] = []
+            ep_entropy_samples: list[float] = []
 
             # İç bar: pulse ilerlemesi + biriken metrikler + bölüm ETA
             pbar_pulse = tqdm(
@@ -489,6 +487,7 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
                     loss_count += 1
 
                 episode_reward += reward
+                ep_step_rewards.append(reward)
 
                 # Epsilon decay: per-step (each pulse) or per-episode (once at end)
                 if epsilon_decay_mode == "per_step":
@@ -515,6 +514,12 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
                     pct = 100.0 * pulse / max_pulses
                     eff = episode_reward / env_steps
                     avg_ent = ep_entropy_sum / env_steps
+                    # Sample for per-episode dashboard
+                    ep_pulse_samples.append(pulse)
+                    ep_hit_samples.append(info["hit_rate"])
+                    ep_avg_match_samples.append(info["avg_match"])
+                    ep_eff_samples.append(eff)
+                    ep_entropy_samples.append(avg_ent)
                     pct_step = int(max_pulses * 0.05)
                     if ep_epsilon_history and pct_step > 0:
                         window = ep_epsilon_history[-pct_step:] if len(ep_epsilon_history) >= pct_step else ep_epsilon_history
@@ -539,12 +544,119 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
                         f"⚡ {eff:.3f} │ H {avg_ent:.2f}b{eps_suffix}"
                     )
                     _log_line(log_file, pulse_line)
-                    tqdm.write(pulse_line)
+                    if verbose_terminal:
+                        tqdm.write(pulse_line)
+                    # TensorBoard: step-level metrics (every 500 pulses)
+                    if writer is not None:
+                        global_step = (episode - 1) * max_pulses + pulse
+                        writer.add_scalar("step/reward_cumul", episode_reward, global_step)
+                        writer.add_scalar("step/hit_rate", info["hit_rate"], global_step)
+                        writer.add_scalar("step/subband_rate", info["subband_rate"], global_step)
+                        writer.add_scalar("step/avg_match", info["avg_match"], global_step)
+                        writer.add_scalar("step/efficiency", eff, global_step)
+                        writer.add_scalar("step/epsilon", agent.epsilon, global_step)
+                        writer.add_scalar("step/entropy", avg_ent, global_step)
 
                 if terminated:
                     break
 
             pbar_pulse.close()
+
+            # --- Reward in 500-pulse windows (per episode) --------------------
+            if ep_step_rewards:
+                try:
+                    import matplotlib
+                    matplotlib.use("Agg")
+                    import matplotlib.pyplot as plt
+                    WINDOW = 500
+                    window_rewards = [
+                        sum(ep_step_rewards[i : i + WINDOW])
+                        for i in range(0, len(ep_step_rewards), WINDOW)
+                    ]
+                    if window_rewards:
+                        rwd_plot_dir = plot_dir / "reward_500pulse_windows"
+                        rwd_plot_dir.mkdir(parents=True, exist_ok=True)
+                        fig, ax = plt.subplots(figsize=(10, 3.5))
+                        x = range(1, len(window_rewards) + 1)
+                        ax.bar(x, window_rewards, color="C0", alpha=0.8, edgecolor="C0")
+                        ax.set_xlabel("500-pulse window (1 = pulses 1–500, 2 = 501–1000, …)")
+                        ax.set_ylabel("Total reward in window")
+                        ax.set_title(f"Episode {episode} — reward per {WINDOW}-pulse window ({len(ep_step_rewards)} pulses)")
+                        ax.grid(True, alpha=0.3, axis="y")
+                        fig.tight_layout()
+                        fig.savefig(rwd_plot_dir / f"reward_ep{episode:04d}.png", dpi=120)
+                        fig.savefig(plot_dir / "reward_500pulse_windows_latest.png", dpi=120)
+                        plt.close(fig)
+                except Exception:
+                    pass
+
+            # --- Per-episode dashboard (reward 500-win + epsilon + hit/avg_match/eff/entropy sampled every 500 pulses) ---
+            if ep_step_rewards and ep_epsilon_history and ep_pulse_samples:
+                try:
+                    import matplotlib
+                    matplotlib.use("Agg")
+                    import matplotlib.pyplot as plt
+                    dash_dir = plot_dir / "per_episode_dashboard"
+                    dash_dir.mkdir(parents=True, exist_ok=True)
+                    W = 500
+                    window_rewards = [
+                        sum(ep_step_rewards[i : i + W])
+                        for i in range(0, len(ep_step_rewards), W)
+                    ]
+                    n_win = len(window_rewards)
+                    fig, axes = plt.subplots(3, 2, figsize=(12, 10))
+                    # (1) Reward per 500-pulse window
+                    ax = axes[0, 0]
+                    ax.bar(range(1, n_win + 1), window_rewards, color="C0", alpha=0.8)
+                    ax.set_xlabel("500-pulse window")
+                    ax.set_ylabel("Total reward")
+                    ax.set_title(f"Ep {episode}: reward per 500-pulse window")
+                    ax.grid(True, alpha=0.3, axis="y")
+                    # (2) Epsilon over pulses
+                    ax = axes[0, 1]
+                    ax.plot(range(1, len(ep_epsilon_history) + 1), ep_epsilon_history, color="C2", linewidth=0.6)
+                    ax.set_xlabel("Pulse")
+                    ax.set_ylabel("ε")
+                    ax.set_ylim(-0.02, 1.02)
+                    ax.set_title(f"Ep {episode}: ε over pulses")
+                    ax.grid(True, alpha=0.3)
+                    # (3) Hit rate (sampled every 500 pulses)
+                    ax = axes[1, 0]
+                    ax.plot(ep_pulse_samples, ep_hit_samples, color="C1", marker="o", markersize=3)
+                    ax.set_xlabel("Pulse")
+                    ax.set_ylabel("Hit rate")
+                    ax.set_ylim(0, 1.02)
+                    ax.set_title("Hit rate (sampled every 500 pulses)")
+                    ax.grid(True, alpha=0.3)
+                    # (4) Avg match (sampled every 500 pulses)
+                    ax = axes[1, 1]
+                    ax.plot(ep_pulse_samples, ep_avg_match_samples, color="C5", marker="s", markersize=3)
+                    ax.set_xlabel("Pulse")
+                    ax.set_ylabel("Avg match (Num)")
+                    ax.set_ylim(0, 4.1)
+                    ax.set_title("Avg match (sampled every 500 pulses)")
+                    ax.grid(True, alpha=0.3)
+                    # (5) Efficiency (sampled every 500 pulses)
+                    ax = axes[2, 0]
+                    ax.plot(ep_pulse_samples, ep_eff_samples, color="C7", marker="^", markersize=3)
+                    ax.set_xlabel("Pulse")
+                    ax.set_ylabel("Efficiency (reward/pulse)")
+                    ax.set_title("Efficiency (sampled every 500 pulses)")
+                    ax.grid(True, alpha=0.3)
+                    # (6) Entropy (sampled every 500 pulses)
+                    ax = axes[2, 1]
+                    ax.plot(ep_pulse_samples, ep_entropy_samples, color="C6", marker="d", markersize=3)
+                    ax.set_xlabel("Pulse")
+                    ax.set_ylabel("Policy entropy (bits)")
+                    ax.set_title("Entropy (sampled every 500 pulses)")
+                    ax.grid(True, alpha=0.3)
+                    fig.suptitle(f"Episode {episode} — step-by-step metrics", fontsize=11)
+                    fig.tight_layout()
+                    fig.savefig(dash_dir / f"dashboard_ep{episode:04d}.png", dpi=120)
+                    fig.savefig(plot_dir / "per_episode_dashboard_latest.png", dpi=120)
+                    plt.close(fig)
+                except Exception:
+                    pass
 
             # --- End of episode bookkeeping -----------------------------------
 
@@ -588,6 +700,19 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
             }
             all_metrics.append(metrics)
 
+            # TensorBoard: episode-level metrics
+            if writer is not None:
+                writer.add_scalar("episode/reward", metrics["total_reward"], episode)
+                writer.add_scalar("episode/hit_rate", metrics["hit_rate"], episode)
+                writer.add_scalar("episode/subband_rate", metrics["subband_rate"], episode)
+                writer.add_scalar("episode/avg_match", metrics["avg_match"], episode)
+                writer.add_scalar("episode/epsilon", metrics["epsilon"], episode)
+                writer.add_scalar("episode/avg_loss", metrics["avg_loss"], episode)
+                writer.add_scalar("episode/entropy", metrics["entropy"], episode)
+                writer.add_scalar("episode/efficiency", metrics["efficiency"], episode)
+                writer.add_scalar("episode/env_steps", metrics["env_steps"], episode)
+                writer.add_scalar("episode/time_sec", metrics["time_sec"], episode)
+
             # Dış bar postfix
             pbar_ep.set_postfix(
                 ret=f"{episode_reward:.0f}",
@@ -630,8 +755,8 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
                 except Exception:
                     pass
 
-            # --- Incremental training curves (same folder, updated PNGs) -------
-            if episode % plot_interval == 0 and all_metrics:
+            # --- Run-level curves: update after every episode (TensorBoard-style incremental) ---
+            if all_metrics:
                 try:
                     _save_training_plots(
                         all_metrics=all_metrics,
@@ -659,6 +784,8 @@ def train(config_path: str = "configs/default.yaml", device_override: str | None
                 break
     finally:
         log_file.close()
+        if writer is not None:
+            writer.close()
 
     # --- Final save -------------------------------------------------------
     agent.save(str(run_dir / "final_model.pt"))

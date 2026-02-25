@@ -37,7 +37,7 @@ training:
   gamma: 0.9
   learning_rate: 0.009
   batch_size: 256
-  epsilon_start: 0.995
+  epsilon_start: 0.1
   epsilon_end: 0.005
   epsilon_decay_mode: "per_step"      # per_episode = once per episode; per_step = every env step (use epsilon_decay_steps)
   epsilon_decay_episodes: 100         # used when mode=per_episode
@@ -64,7 +64,7 @@ radar:
     sigma_subband: 1.5
   start_index: 0
   random_start_index: true
-  markov_transition_path: "results/markov_matrices/markov_P_markov_seed42.npy"
+  markov_transition_path: "results/markov_matrices/markov_P_deterministic_cycle_seed42.npy"
   # --- Fixed radar values (M, K, frequency bounds) ---
   M: 10              # Number of subbands
   K: 4               # Sub-pulses per pulse
@@ -91,6 +91,8 @@ logging:
   save_interval: 10
   plot_interval: 10
   results_dir: "results"
+  use_tensorboard: true    # TensorBoard ile interaktif metrik takibi
+  verbose_terminal: false  # true: her 500 pulse'ta terminale yaz; false: sadece episode özeti (TensorBoard kullanırken)
 
 # -----------------------------------------------------------------------------
 # 6) Radar — Physical parameters (Paper Table 1)
